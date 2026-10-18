@@ -2,3 +2,4 @@ bin/
 snap/
 __pycache__/
 .ansible/
+.env

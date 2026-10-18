@@ -17,8 +17,8 @@ from typing import Optional
 STATE_ROOT = Path(__file__).resolve().parent / "state"
 DEFAULT_RANCHER_HOST = "rancher.192.168.1.102.sslip.io"
 DEFAULT_PORTAINER_HOST = "portainer.192.168.1.102.sslip.io"
-DEFAULT_PORTAINER_API_KEY = "changeme"
-DEFAULT_RANCHER_API_KEY = "changeme"
+DEFAULT_PORTAINER_API_KEY = os.getenv("PORTAINER_API_KEY")
+DEFAULT_RANCHER_API_KEY = os.getenv("RANCHER_TOKEN")
 
 WORDS = (
     "acacia almond alpine anchor autumn bamboo beacon birchwood blossom bronze "

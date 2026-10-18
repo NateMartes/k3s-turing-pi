@@ -21,7 +21,7 @@ store and the Chromium trust store as well. This is nice for removing warnings f
 clusters when proper DNS is not set up yet.
 
 ```bash
-sudo ./trust-k3s-certs
+sudo -E ./trust-k3s-certs
 ```
 
 ### `create-user`
@@ -161,7 +161,7 @@ sudo ./plumbing-scripts/uninstall-docker-rootless -u bob --purge-data
 Runs a Portainer Agent against the user's rootless Docker socket.
 
 ```bash
-sudo ./plumbing-scripts/install-portainer-agent \
+sudo -E ./plumbing-scripts/install-portainer-agent \
   -u bob \
   -H portainer.192.168.1.102.sslip.io \
   --port 9002
@@ -182,7 +182,7 @@ sudo ./plumbing-scripts/uninstall-portainer-agent -u bob
 Creates `<username>-namespace`, a service account, RBAC, and the user's kubeconfig.
 
 ```bash
-sudo ./plumbing-scripts/install-k3s-namespace -u bob
+sudo -E ./plumbing-scripts/install-k3s-namespace -u bob
 ```
 
 ### `uninstall-k3s-namespace`
@@ -190,7 +190,7 @@ sudo ./plumbing-scripts/install-k3s-namespace -u bob
 Deletes the user's namespace and the kubeconfig created by this tool.
 
 ```bash
-sudo ./plumbing-scripts/uninstall-k3s-namespace -u bob
+sudo -E ./plumbing-scripts/uninstall-k3s-namespace -u bob
 ```
 
 Deleting the namespace also deletes namespaced Kubernetes resources inside it.
@@ -365,7 +365,7 @@ All command files in `user-scripts/` and `plumbing-scripts/` are marked executab
 You can run them directly:
 
 ```bash
-sudo ./user-scripts/create-user -u bob -q 5GB
+sudo -E ./user-scripts/create-user -u bob -q 5GB
 ```
 
 or install/symlink the main commands into `/usr/local/bin`.

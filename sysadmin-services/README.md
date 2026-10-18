@@ -60,16 +60,16 @@ and replace it with a hostname that resolves to a K3s node.
 ## Apply
 
 ```bash
-sudo kubectl apply -k ./sysadmin-system
+sudo -E kubectl apply -k ./sysadmin-system
 ```
 
 ## Check
 
 ```bash
-sudo k3s kubectl get pods -n sysadmin-system
-sudo k3s kubectl get pods -n cattle-system
-sudo k3s kubectl get pods -n cert-manager
-sudo k3s kubectl get helmcharts -n kube-system
+sudo -E k3s kubectl get pods -n sysadmin-system
+sudo -E k3s kubectl get pods -n cattle-system
+sudo -E k3s kubectl get pods -n cert-manager
+sudo -E k3s kubectl get helmcharts -n kube-system
 ```
 
 ## Access

@@ -78,7 +78,7 @@ Currently this setup supports:
 7. Deploy sysadmin services to K3s:
 
    ```bash
-   cd $HOME && sudo kubectl apply -k sysadmin-services
+   cd $HOME && sudo -E kubectl apply -k sysadmin-services
    ```
 
    At this point, the sysadmin services will be running on the K3s server node,
@@ -91,7 +91,7 @@ Currently this setup supports:
 8. Trust the certificates from the sysadmin K3s services if you are using self-signed certificates:
 
    ```bash
-   cd $HOME && sudo ./scripts/trust-k3s-certs
+   cd $HOME && sudo -E ./scripts/trust-k3s-certs
    ```
 
 9. Log into Portainer (currently at `portainer.<server-node-ip>.sslip.io`) for the first time.
@@ -114,36 +114,38 @@ That's it! Now you have K3s running some neat services!
 2. Get a Rancher API token from the current Rancher instance.
 
    From the UI, log in, and then go to your account and create an API key.
-   Store this key in `$HOME/scripts/user_common.py` as the `RANCHER_API_KEY`.
+   Store this key in `$HOME/.env` as the `RANCHER_TOKEN`.
+   Remember to `source $HOME/.env`.
 
 3. Get a Portainer API token from the current Portainer instance.
 
    From the UI, log in, and then go to your account and create an API key.
-   Store this key in `$HOME/scripts/user_common.py` as the `PORTAINER_API_KEY`.
+   Store this key in `$HOME/.env` as the `PORTAINER_API_KEY`.
+   Remember to `source $HOME/.env`.
 
 4. Enable quotas for users:
 
    ```bash
-   cd $HOME && ./scripts/enable-quotas /home
+   cd $HOME && sudo ./scripts/enable-quotas /home
    ```
 
 5. Run the create-user script:
 
    ```bash
-   cd $HOME && ./scripts/create-user -u <new-user>
+   cd $HOME && sudo -E ./scripts/create-user -u <new-user>
    ```
 
 This will make accounts on the services above, automatically.
 In the event of failures, you can revert the changes:
 
 ```bash
-cd $HOME && ./scripts/remove-user -u <new-user>
+cd $HOME && sudo -E ./scripts/remove-user -u <new-user>
 ```
 
 ### Updating User Passwords
 
 ```bash
-cd $HOME && ./scripts/change-user-password -u <new-user>
+cd $HOME && sudo -E ./scripts/change-user-password -u <new-user>
 ```
 
 This will update the passwords in K3s services too!
@@ -154,5 +156,5 @@ not allow a password to be updated.
 ### Removing Users
 
 ```bash
-cd $HOME && ./scripts/remove-user -u <new-user>
+cd $HOME && sudo -E ./scripts/remove-user -u <new-user>
 ```
