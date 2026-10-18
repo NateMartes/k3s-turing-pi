@@ -29,8 +29,12 @@ Currently this setup supports:
    This copies this repo into your `$HOME`, but also **overwrites any match file names**, so
    be careful...
    ```bash
-   curl -fsSL https://github.com/NateMartes/k3s-turing-pi/archive/HEAD.tar.gz \
-     | tar -xz --strip-components=1 -C "$HOME"
+    curl -fsSL https://github.com/NateMartes/k3s-turing-pi/archive/HEAD.tar.gz \
+      | tar -xz \
+          --strip-components=1 \
+          --exclude='*/ansible/inventory.yml' \
+          # Add more --exclude=... here! \
+          -C "$HOME"
    ```
 
    you could also...
