@@ -1,0 +1,4 @@
+bin/
+snap/
+__pycache__/
+.ansible/

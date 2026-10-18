@@ -1,29 +1,30 @@
 # Scripts
+
 This repository contains two layers of administration tools:
 
 - **`user-scripts/`** — the main commands an administrator normally uses.
-- **`plumbing-scripts/`** — lower-level commands used by the main commands to configure Docker, Portainer, K3s, and Rancher.
+- **`plumbing-scripts/`** — lower-level commands used by the main commands to
+  configure Docker, Portainer, K3s, and Rancher.
 
 Per-user state is stored locally beside the main scripts:
+
 ```text
 user-scripts/state/<username>.json
 ```
 
----
+## Main Commands
 
-# Main Commands
+### `trust-k3s-certs`
 
-## `trust-k3s-certs`
-
-When ran, adds the current K3s services's certificates and adds them to the Linux trust
-store the Chromium trust store aswell. This is nice to remove warnings for local
+When run, adds the current K3s services' certificates to the Linux trust
+store and the Chromium trust store as well. This is nice for removing warnings for local
 clusters when proper DNS is not set up yet.
 
 ```bash
 sudo ./trust-k3s-certs
 ```
 
-## `create-user`
+### `create-user`
 
 Creates a complete managed user.
 
@@ -44,11 +45,10 @@ Creates a complete managed user.
 ```bash
 sudo -E ./user-scripts/create-user -u bob -q 5GB
 ```
+
 Quota may be specified as MB or GB:
 
----
-
-## `remove-user`
+### `remove-user`
 
 Removes a managed user's resources.
 
@@ -79,9 +79,7 @@ For non-interactive removal:
 sudo -E ./user-scripts/remove-user -u bob --yes
 ```
 
----
-
-## `change-user-password`
+### `change-user-password`
 
 Changes the password everywhere the user has a password-based account.
 
@@ -93,31 +91,30 @@ Prompts for the new password twice and updates:
 
 The password is not echoed to the terminal.
 
-Linux is updated last so that a failed Rancher or Portainer update does not knowingly leave Linux on a different password.
+Linux is updated last so that a failed Rancher or Portainer update does not
+knowingly leave Linux on a different password.
 
 ```bash
 sudo -E ./user-scripts/change-user-password -u bob
 ```
 
----
+### `enable-quotas`
 
-## `enable-quotas`
-
-Turns quotas on for a specific directory on the Linux filesystem
+Turns quotas on for a specific directory on the Linux filesystem.
 
 ```bash
 sudo ./enable-quotas /home
 ```
 
-## `disable-quotas`
+### `disable-quotas`
 
-Turns quotas off for a specifc directory on the Linux filesystem
+Turns quotas off for a specific directory on the Linux filesystem.
 
 ```bash
 sudo ./disable-quotas /home
 ```
 
-## `change-user-quota`
+### `change-user-quota`
 
 Changes the Linux filesystem quota for a managed user.
 
@@ -133,13 +130,11 @@ sudo ./user-scripts/change-user-quota 10GB -u bob
 sudo ./user-scripts/change-user-quota 500MB -u bob
 ```
 
----
-
-# Plumbing Commands
+## Plumbing Commands
 
 These commands are normally called automatically by the main user scripts.
 
-## `install-docker-rootless`
+### `install-docker-rootless`
 
 Installs and configures rootless Docker for a Linux user.
 
@@ -147,9 +142,7 @@ Installs and configures rootless Docker for a Linux user.
 sudo ./plumbing-scripts/install-docker-rootless -u bob
 ```
 
----
-
-## `uninstall-docker-rootless`
+### `uninstall-docker-rootless`
 
 Removes the user's rootless Docker service.
 
@@ -163,9 +156,7 @@ To remove Docker data too:
 sudo ./plumbing-scripts/uninstall-docker-rootless -u bob --purge-data
 ```
 
----
-
-## `install-portainer-agent`
+### `install-portainer-agent`
 
 Runs a Portainer Agent against the user's rootless Docker socket.
 
@@ -178,9 +169,7 @@ sudo ./plumbing-scripts/install-portainer-agent \
 
 Each user on the same machine needs a unique agent port.
 
----
-
-## `uninstall-portainer-agent`
+### `uninstall-portainer-agent`
 
 Removes the user's Portainer Agent container.
 
@@ -188,9 +177,7 @@ Removes the user's Portainer Agent container.
 sudo ./plumbing-scripts/uninstall-portainer-agent -u bob
 ```
 
----
-
-## `install-k3s-namespace`
+### `install-k3s-namespace`
 
 Creates `<username>-namespace`, a service account, RBAC, and the user's kubeconfig.
 
@@ -198,9 +185,7 @@ Creates `<username>-namespace`, a service account, RBAC, and the user's kubeconf
 sudo ./plumbing-scripts/install-k3s-namespace -u bob
 ```
 
----
-
-## `uninstall-k3s-namespace`
+### `uninstall-k3s-namespace`
 
 Deletes the user's namespace and the kubeconfig created by this tool.
 
@@ -210,9 +195,7 @@ sudo ./plumbing-scripts/uninstall-k3s-namespace -u bob
 
 Deleting the namespace also deletes namespaced Kubernetes resources inside it.
 
----
-
-## `install-rancher-account`
+### `install-rancher-account`
 
 Creates a Rancher user and project and assigns the user's namespace to that project.
 
@@ -228,9 +211,7 @@ The default Rancher host is:
 rancher.192.168.1.102
 ```
 
----
-
-## `uninstall-rancher-account`
+### `uninstall-rancher-account`
 
 Deletes the user's Rancher project and Rancher account.
 
@@ -240,9 +221,7 @@ sudo -E ./plumbing-scripts/uninstall-rancher-account \
   --cluster-id local
 ```
 
----
-
-## `set-rancher-password`
+### `set-rancher-password`
 
 Updates an existing Rancher user's password.
 
@@ -252,9 +231,7 @@ Normally called by `change-user-password`.
 sudo -E ./plumbing-scripts/set-rancher-password -u bob
 ```
 
----
-
-## `install-portainer-account`
+### `install-portainer-account`
 
 Creates a Portainer account and registers the user's Agent environment.
 
@@ -264,9 +241,7 @@ sudo -E ./plumbing-scripts/install-portainer-account \
   --agent-address node1.example.internal:9002
 ```
 
----
-
-## `uninstall-portainer-account`
+### `uninstall-portainer-account`
 
 Deletes the user's Portainer environment and Portainer account.
 
@@ -274,10 +249,7 @@ Deletes the user's Portainer environment and Portainer account.
 sudo -E ./plumbing-scripts/uninstall-portainer-account -u bob
 ```
 
----
-
-
-# Dependencies
+## Dependencies
 
 These tools are intended for Debian/Ubuntu systems.
 
@@ -320,13 +292,12 @@ Rootless Docker installation also requires valid subordinate UID/GID ranges in:
 
 The Docker installer attempts to configure these when run as root.
 
----
-
-# Quota Configuration
+## Quota Configuration
 
 Installing the `quota` package alone is not enough.
 
-The filesystem containing the users' home directories must have user quotas enabled, typically with the `usrquota` mount option.
+The filesystem containing the users' home directories must have user quotas
+enabled, typically with the `usrquota` mount option.
 
 For example, if `/home` is on `/dev/sda2`, its `/etc/fstab` entry may need something like:
 
@@ -334,22 +305,22 @@ For example, if `/home` is on `/dev/sda2`, its `/etc/fstab` entry may need somet
 UUID=... /home ext4 defaults,usrquota 0 2
 ```
 
-After enabling quotas, the filesystem may need to be remounted and quota metadata initialized before `setquota` can work.
+After enabling quotas, the filesystem may need to be remounted and quota metadata
+initialized before `setquota` can work.
 
----
+## Authentication Environment Variables
 
-# Authentication Environment Variables
+For administrator operations, use environment variables rather than putting
+sensitive administrator credentials directly in shell history.
 
-For administrator operations, use environment variables rather than putting sensitive administrator credentials directly in shell history.
-
-## Rancher
+### Rancher
 
 ```bash
 export RANCHER_TOKEN='token-xxxxx:yyyyyyyy'
 export RANCHER_CLUSTER_ID='local'
 ```
 
-## Portainer
+### Portainer
 
 ```bash
 export PORTAINER_API_KEY='ptr_xxxxxxxxx'
@@ -361,9 +332,7 @@ Then preserve those environment variables through `sudo`:
 sudo -E ./user-scripts/create-user -u bob -q 5GB
 ```
 
----
-
-# State Files
+## State Files
 
 State files are stored at:
 
@@ -389,9 +358,7 @@ They record resource information such as:
 
 They do **not** contain passwords.
 
----
-
-# Permissions
+## Permissions
 
 All command files in `user-scripts/` and `plumbing-scripts/` are marked executable.
 

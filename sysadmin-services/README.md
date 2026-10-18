@@ -13,8 +13,8 @@ custom namespace.
 
 Rancher is intentionally left in `cattle-system`. Rancher has components that
 assume this namespace, so moving it to `sysadmin-system` is not a safe
-deployment choice. cert-manager is intentionally left in 
-its conventional `cert-manager` namespace because it is a singleton 
+deployment choice. cert-manager is intentionally left in
+its conventional `cert-manager` namespace because it is a singleton
 cluster-level dependency with CRDs, webhooks, and cluster-scoped RBAC.
 
 All three HelmChart resources are labeled:
@@ -50,9 +50,11 @@ hostname: rancher.192.168.1.50.sslip.io
 ```
 
 Edit `portainer.yaml`:
+
 ```yaml
 host: portainer.192.168.1.50.sslip.io
 ```
+
 and replace it with a hostname that resolves to a K3s node.
 
 ## Apply

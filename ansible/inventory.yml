@@ -4,10 +4,10 @@ all:
     k3s_version: "v1.36.1+k3s1"
 
   hosts:
-    lwol-hongdan:
+    node1:
       ansible_host: 192.168.1.102
       k3s_host: true
 
-    lwol-sonamu:
+    node2:
       ansible_host: 192.168.1.103
       k3s_host: false
