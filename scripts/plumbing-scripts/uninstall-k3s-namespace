@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+import argparse
+import os
+from pathlib import Path
+
+from platform_common import current_username, get_user, home_path, require_root, run, get_marker, determine_username
+
+MARKER = get_marker("K3s Namespace")
+
+def kubectl(args):
+    env = os.environ.copy()
+    if "KUBECONFIG" not in env and Path("/etc/rancher/k3s/k3s.yaml").exists():
+        env["KUBECONFIG"] = "/etc/rancher/k3s/k3s.yaml"
+    return run(["kubectl", *args], check=False, env=env)
+
+def main():
+    p = argparse.ArgumentParser(description="Delete a user's managed K3s namespace and generated kubeconfig.")
+    p.add_argument("-u", "--username", default=current_username())
+    args = p.parse_args()
+
+    require_root()
+    username = determine_username(args.username)
+    get_user(username)
+    namespace = f"{username}-namespace"
+
+    print(f"Deleting namespace {namespace}; Kubernetes will also delete resources inside it.")
+    kubectl(["delete", "namespace", namespace, "--ignore-not-found=true"])
+
+    kube_dir = home_path(username) / ".kube"
+    marker = kube_dir / MARKER
+    config = kube_dir / "config"
+    if marker.exists() and marker.read_text().strip() == namespace:
+        config.unlink(missing_ok=True)
+        marker.unlink(missing_ok=True)
+        try:
+            kube_dir.rmdir()
+        except OSError:
+            pass
+        print(f"Removed managed kubeconfig for {username}.")
+    else:
+        print("Did not remove ~/.kube/config because it was not marked as created by this tool.")
+
+if __name__ == "__main__":
+    main()

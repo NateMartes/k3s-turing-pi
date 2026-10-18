@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+
+import os
+import shutil
+import sys
+from pathlib import Path
+
+from user_common import die, require_root, run
+
+
+FSTAB = Path("/etc/fstab")
+BACKUP = Path("/etc/fstab.user-platform-backup")
+
+
+def get_mount_info(path: str) -> tuple[str, str, str]:
+    result = run(
+        ["findmnt", "-no", "SOURCE,TARGET,FSTYPE", "-T", path],
+        capture=True,
+    )
+
+    parts = result.stdout.strip().split()
+
+    if len(parts) != 3:
+        die(f"Could not determine filesystem information for {path}.")
+
+    return tuple(parts)
+
+
+def enable_usrquota(mountpoint: str) -> bool:
+    lines = FSTAB.read_text().splitlines()
+    output = []
+    changed = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        if not stripped or stripped.startswith("#"):
+            output.append(line)
+            continue
+
+        fields = line.split()
+
+        if len(fields) < 4 or fields[1] != mountpoint:
+            output.append(line)
+            continue
+
+        options = fields[3].split(",")
+
+        if "usrquota" not in options:
+            options.append("usrquota")
+            fields[3] = ",".join(options)
+            changed = True
+
+        output.append("\t".join(fields))
+
+    if changed:
+        if not BACKUP.exists():
+            shutil.copy2(FSTAB, BACKUP)
+
+        FSTAB.write_text("\n".join(output) + "\n")
+
+    return changed
+
+
+def main():
+    require_root()
+
+    if len(sys.argv) != 2:
+        die(f"Usage: {sys.argv[0]} /path/for/quotas")
+
+    path = os.path.abspath(sys.argv[1])
+
+    if not os.path.exists(path):
+        die(f"Path does not exist: {path}")
+
+    source, mountpoint, fstype = get_mount_info(path)
+
+    if fstype not in ("ext2", "ext3", "ext4"):
+        die(f"Unsupported filesystem: {fstype}")
+
+    print(f"Enabling quotas for filesystem containing {path}")
+    print(f"Device:      {source}")
+    print(f"Mount point: {mountpoint}")
+    print(f"Filesystem:  {fstype}")
+
+    if enable_usrquota(mountpoint):
+        print("Added usrquota to /etc/fstab.")
+    else:
+        print("usrquota is already present in /etc/fstab.")
+
+    run(["mount", "-o", "remount", mountpoint])
+
+    print("Initializing quota metadata...")
+    run(["quotacheck", "-cum", mountpoint])
+
+    print("Enabling user quotas...")
+    run(["quotaon", "-u", mountpoint])
+
+    print(f"Quotas enabled on {mountpoint}.")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import pwd
+from pathlib import Path
+
+from user_common import (
+    DEFAULT_PORTAINER_HOST, DEFAULT_RANCHER_HOST, agent_address, choose_agent_port,
+    die, generate_password, print_resource_summary, require_root, run, run_plumbing,
+    save_state, set_quota, state_path, user_exists, validate_username,
+    DEFAULT_PORTAINER_API_KEY, DEFAULT_RANCHER_API_KEY,
+)
+
+def main():
+    p = argparse.ArgumentParser(
+        description="Create a Linux user and provision their Docker/K3s/Rancher/Portainer resources."
+    )
+    p.add_argument("-u", "--username", required=True)
+    p.add_argument("-q", "--quota", default=None, help="Filesystem quota, e.g. 5GB or 500MB.")
+    p.add_argument("--rancher-host", default=DEFAULT_RANCHER_HOST)
+    p.add_argument("--portainer-host", default=DEFAULT_PORTAINER_HOST)
+    p.add_argument("--cluster-id", default="local")
+    p.add_argument("--agent-port", type=int, default=None)
+    p.add_argument("--agent-address", default=None,
+                   help="Address Portainer can use to reach this user's agent; defaults to this host FQDN:port.")
+    p.add_argument("--shell", default="/bin/bash")
+    args = p.parse_args()
+
+    require_root()
+    username = validate_username(args.username)
+    if user_exists(username):
+        die(f"Linux user {username!r} already exists.")
+    if state_path(username).exists():
+        die(f"A state file already exists for {username}; remove/reconcile it first.")
+
+    quota = args.quota or input("Quota for user (for example 5GB): ").strip()
+    password = generate_password()
+    agent_port = args.agent_port or choose_agent_port()
+    agent_addr = args.agent_address or agent_address(agent_port)
+
+    state = {
+        "username": username,
+        "quota": quota,
+        "rancher_host": args.rancher_host,
+        "portainer_host": args.portainer_host,
+        "cluster_id": args.cluster_id,
+        "agent_port": agent_port,
+        "agent_address": agent_addr,
+        "namespace": f"{username}-namespace",
+        "rancher_user": username,
+        "rancher_project": f"{username}-project",
+        "portainer_user": username,
+        "portainer_environment": f"{username}-docker",
+        "docker_rootless": False,
+        "portainer_agent": False,
+    }
+
+    try:
+        print(f"Creating Linux user {username}...")
+        run(["useradd", "--create-home", "--shell", args.shell, username])
+        run(["chpasswd"], input_data=f"{username}:{password}\n")
+        u = pwd.getpwnam(username)
+        state["uid"] = u.pw_uid
+        state["home"] = u.pw_dir
+        state["linux_user"] = True
+
+        state.update(set_quota(username, quota))
+        save_state(username, state)
+
+        print("\n[1/5] Installing rootless Docker")
+        run_plumbing("install-docker-rootless", ["-u", username])
+        state["docker_rootless"] = True
+        save_state(username, state)
+
+        print("\n[2/5] Installing Portainer Agent")
+        agent_args = [
+            "-u", username,
+            "-H", args.portainer_host,
+            "--port", str(agent_port),
+        ]
+        run_plumbing("install-portainer-agent", agent_args)
+        state["portainer_agent"] = True
+        save_state(username, state)
+
+        print("\n[3/5] Creating K3s namespace")
+        run_plumbing("install-k3s-namespace", ["-u", username])
+        state["k3s_namespace"] = True
+        save_state(username, state)
+
+        print("\n[4/5] Creating Rancher account/project")
+        rancher_args = ["-u", username, "-H", args.rancher_host]
+        if args.cluster_id:
+            rancher_args += ["--cluster-id", args.cluster_id]
+        run_plumbing(
+            "install-rancher-account",
+            rancher_args,
+            extra_env={
+                "USER_PASSWORD": password, 
+                "RANCHER_TOKEN": DEFAULT_RANCHER_API_KEY
+            },
+        )
+        state["rancher_account"] = True
+        save_state(username, state)
+
+        print("\n[5/5] Creating Portainer account/environment")
+        portainer_args = [
+            "-u", username,
+            "-H", args.portainer_host,
+            "--agent-address", agent_addr,
+            "--agent-port", str(agent_port),
+        ]
+        run_plumbing(
+            "install-portainer-account",
+            portainer_args,
+            extra_env={
+                "USER_PASSWORD": password,
+                "PORTAINER_API_KEY": DEFAULT_PORTAINER_API_KEY
+            },
+        )
+        state["portainer_account"] = True
+        save_state(username, state)
+
+    except Exception:
+        print("\nProvisioning stopped before completion.")
+        print(f"Partial state has been saved to {state_path(username)}.")
+        print("Run remove-user for this username to clean up the resources that were created.")
+        raise
+
+    print_resource_summary(state, include_password=password)
+
+if __name__ == "__main__":
+    main()

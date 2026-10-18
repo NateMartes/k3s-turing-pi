@@ -1,0 +1,36 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: rancher
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/part-of: sysadmin-system
+spec:
+  chart: rancher
+  repo: https://releases.rancher.com/server-charts/stable
+  version: 2.15.1
+  # If we had put this in sysadmin-system, there might be issues
+  targetNamespace: cattle-system
+  createNamespace: true
+  timeout: 15m
+  backOffLimit: 20
+  valuesContent: |-
+
+    # This IP address should match the node it runs on
+    hostname: rancher.192.168.1.102.sslip.io
+
+    image:
+      repository: rancher/rancher
+      tag: v2.15.0
+      pullPolicy: IfNotPresent
+
+    replicas: 1
+
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      tls:
+        source: rancher
+
+    certmanager:
+      version: v1.21.2

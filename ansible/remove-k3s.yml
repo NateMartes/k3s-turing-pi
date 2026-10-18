@@ -1,0 +1,77 @@
+---
+# Remove K3s from nodes
+# A nice thing to have if anything just... blows up
+
+- name: Classify K3s nodes
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Add node to K3s server or agent group
+      ansible.builtin.group_by:
+        key: "k3s_{{ 'server' if (k3s_host | default(false) | bool) else 'agent' }}"
+
+- name: Remove K3s agents
+  hosts: k3s_agent
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check for K3s agent uninstall script
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s-agent-uninstall.sh
+      register: k3s_agent_uninstall
+
+    - name: Run K3s agent uninstall script
+      ansible.builtin.command:
+        cmd: /usr/local/bin/k3s-agent-uninstall.sh
+      when: k3s_agent_uninstall.stat.exists
+
+    - name: Remove leftover K3s configuration
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+        - /var/lib/kubelet
+        - /var/lib/cni
+        - /etc/cni
+
+    - name: Remove K3s temporary install script
+      ansible.builtin.file:
+        path: /tmp/install-k3s.sh
+        state: absent
+
+
+- name: Remove K3s server
+  hosts: k3s_server
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check for K3s server uninstall script
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s-uninstall.sh
+      register: k3s_server_uninstall
+
+    - name: Run K3s server uninstall script
+      ansible.builtin.command:
+        cmd: /usr/local/bin/k3s-uninstall.sh
+      when: k3s_server_uninstall.stat.exists
+
+    - name: Remove leftover K3s configuration
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+        - /var/lib/kubelet
+        - /var/lib/cni
+        - /etc/cni
+
+    - name: Remove K3s temporary install script
+      ansible.builtin.file:
+        path: /tmp/install-k3s.sh
+        state: absent

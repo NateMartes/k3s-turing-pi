@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+import argparse
+from pathlib import Path
+
+from platform_common import (
+    current_username, docker_cmd, docker_socket, get_user, home_path, info,
+    require_root_for_other_user, run_as_target_user,
+)
+
+CONTAINER = "portainer-agent"
+
+def main():
+    p = argparse.ArgumentParser(
+        description="Run a Portainer Agent against a user's rootless Docker socket."
+    )
+    p.add_argument("-u", "--username", default=current_username())
+    p.add_argument("-H", "--hostname", default="portainer.192.168.1.102.sslip.io",
+                   help="Portainer server hostname (stored as metadata only; the normal Agent is pull-based).")
+    p.add_argument("--port", type=int, default=9001,
+                   help="Host port exposed by this user's agent. Use a unique port per user on shared hosts.")
+    p.add_argument("--image", default="portainer/agent:lts")
+    p.add_argument("--agent-secret", default=None,
+                   help="Optional AGENT_SECRET. Prefer PORTAINER_AGENT_SECRET env when scripting.")
+    args = p.parse_args()
+
+    username = args.username
+    get_user(username)
+    require_root_for_other_user(username)
+
+    sock = docker_socket(username)
+    if not sock.exists():
+        raise SystemExit(
+            f"Rootless Docker socket not found at {sock}. Install/start rootless Docker for {username} first."
+        )
+
+    home = home_path(username)
+    volumes = home / ".local/share/docker/volumes"
+    volumes.mkdir(parents=True, exist_ok=True)
+
+    docker = docker_cmd(username)
+    run_as_target_user(username, docker + ["rm", "-f", CONTAINER], check=False)
+
+    cmd = docker + [
+        "run", "-d",
+        "--name", CONTAINER,
+        "--restart", "unless-stopped",
+        "-p", f"{args.port}:9001",
+        "-v", f"{sock}:/var/run/docker.sock",
+        "-v", f"{volumes}:/var/lib/docker/volumes",
+        "-e", f"PORTAINER_SERVER={args.hostname}",
+    ]
+
+    import os
+    secret = args.agent_secret or os.environ.get("PORTAINER_AGENT_SECRET")
+    if secret:
+        cmd += ["-e", f"AGENT_SECRET={secret}"]
+
+    cmd.append(args.image)
+    info(f"Starting Portainer Agent for {username} on host port {args.port}")
+    run_as_target_user(username, cmd)
+
+    print(f"Portainer Agent is running for {username}.")
+    print(f"Portainer must connect to this machine at <reachable-host>:{args.port}.")
+    print("The standard Portainer Agent does not push the Docker socket to the Portainer server.")
+
+if __name__ == "__main__":
+    main()

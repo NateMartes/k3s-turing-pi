@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+import argparse
+import base64
+import json
+import os
+from pathlib import Path
+
+from platform_common import current_username, get_user, home_path, require_root, run, get_marker, determine_username
+
+MARKER = get_marker("K3s Namespace")
+
+def kubectl(args, *, capture=False, input_data=None):
+    env = os.environ.copy()
+    if "KUBECONFIG" not in env and Path("/etc/rancher/k3s/k3s.yaml").exists():
+        env["KUBECONFIG"] = "/etc/rancher/k3s/k3s.yaml"
+    return run(["kubectl", *args], capture=capture, env=env, input_data=input_data)
+
+def main():
+    p = argparse.ArgumentParser(description="Create a private K3s namespace and per-user kubeconfig.")
+    p.add_argument("-u", "--username", default=current_username())
+    args = p.parse_args()
+
+    require_root()
+    username = determine_username(args.username)
+    u = get_user(username)
+    namespace = f"{username}-namespace"
+    sa = f"{username}-user"
+
+    run(["kubectl", "create", "namespace", namespace], check=False)
+    run(["kubectl", "-n", namespace, "create", "serviceaccount", sa], check=False)
+
+    rb = f"""apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {username}-namespace-admin
+  namespace: {namespace}
+subjects:
+- kind: ServiceAccount
+  name: {sa}
+  namespace: {namespace}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+"""
+    kubectl(["apply", "-f", "-"], input_data=rb)
+
+    secret = f"""apiVersion: v1
+kind: Secret
+metadata:
+  name: {sa}-token
+  namespace: {namespace}
+  annotations:
+    kubernetes.io/service-account.name: {sa}
+type: kubernetes.io/service-account-token
+"""
+    kubectl(["apply", "-f", "-"], input_data=secret)
+
+    token_b64 = kubectl(
+        ["-n", namespace, "get", "secret", f"{sa}-token", "-o", "jsonpath={.data.token}"],
+        capture=True,
+    ).stdout.strip()
+    ca_b64 = kubectl(
+        ["-n", namespace, "get", "secret", f"{sa}-token", "-o", "jsonpath={.data.ca\\.crt}"],
+        capture=True,
+    ).stdout.strip()
+
+    cluster_json = kubectl(["config", "view", "--raw", "--minify", "-o", "json"], capture=True).stdout
+    cluster = json.loads(cluster_json)
+    server = cluster["clusters"][0]["cluster"]["server"]
+
+    token = base64.b64decode(token_b64).decode()
+
+    config = f"""apiVersion: v1
+kind: Config
+clusters:
+- name: k3s
+  cluster:
+    server: {server}
+    certificate-authority-data: {ca_b64}
+contexts:
+- name: {username}@k3s
+  context:
+    cluster: k3s
+    namespace: {namespace}
+    user: {username}
+current-context: {username}@k3s
+users:
+- name: {username}
+  user:
+    token: {token}
+"""
+
+    kube_dir = home_path(username) / ".kube"
+    kube_dir.mkdir(parents=True, exist_ok=True)
+    config_path = kube_dir / "config"
+    config_path.write_text(config)
+    os.chmod(config_path, 0o600)
+    (kube_dir / MARKER).write_text(namespace + "\n")
+    os.chown(kube_dir, u.pw_uid, u.pw_gid)
+    os.chown(config_path, u.pw_uid, u.pw_gid)
+    os.chown(kube_dir / MARKER, u.pw_uid, u.pw_gid)
+
+    print(f"Created namespace: {namespace}")
+    print(f"Created kubeconfig: {config_path}")
+    print("This kubeconfig authenticates as a namespace-scoped service account.")
+    print("Cluster administrators still retain cluster-wide access.")
+
+if __name__ == "__main__":
+    main()

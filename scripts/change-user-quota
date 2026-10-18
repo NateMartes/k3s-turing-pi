@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+import argparse
+
+from user_common import (
+    die, load_state, require_root, save_state, set_quota, user_exists,
+    validate_username,
+)
+
+def main():
+    p = argparse.ArgumentParser(description="Change a Linux user's filesystem quota.")
+    p.add_argument("quota", help="New quota, e.g. 500MB or 10GB.")
+    p.add_argument("-u", "--username", required=True)
+    args = p.parse_args()
+
+    require_root()
+    username = validate_username(args.username)
+    if not user_exists(username):
+        die(f"Linux user {username!r} does not exist.")
+
+    quota_state = set_quota(username, args.quota)
+    state = load_state(username)
+    if state:
+        state.update(quota_state)
+        save_state(username, state)
+
+    print(
+        f"Updated {username}'s quota to {quota_state['quota']} "
+        f"on {quota_state['quota_filesystem']}."
+    )
+
+if __name__ == "__main__":
+    main()

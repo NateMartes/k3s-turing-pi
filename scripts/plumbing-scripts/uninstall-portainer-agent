@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+import argparse
+
+from platform_common import (
+    current_username, docker_cmd, get_user, require_root_for_other_user, run_as_target_user,
+)
+
+def main():
+    p = argparse.ArgumentParser(description="Remove a user's Portainer Agent container.")
+    p.add_argument("-u", "--username", default=current_username())
+    args = p.parse_args()
+
+    username = args.username
+    get_user(username)
+    require_root_for_other_user(username)
+    result = run_as_target_user(username, docker_cmd(username) + ["rm", "-f", "portainer-agent"], check=False)
+    print(f"Portainer Agent removed for {username}.")
+
+if __name__ == "__main__":
+    main()

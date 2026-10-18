@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+import argparse
+import os
+from urllib.parse import quote
+
+from platform_common import current_username, normalize_url, rancher_headers, request_json, secure_prompt, require_root
+
+def main():
+    # Run this command as the administrator/root.
+    # --username identifies the target account only; never switch to that user's UID.
+    require_root()
+    p = argparse.ArgumentParser(description="Remove a user's Rancher project and local Rancher account.")
+    p.add_argument("-u", "--username", default=current_username())
+    p.add_argument("-H", "--hostname", default="rancher.192.168.1.102.sslip.io")
+    p.add_argument("--cluster-id", default=os.environ.get("RANCHER_CLUSTER_ID"))
+    p.add_argument("--token", default=os.environ.get("RANCHER_TOKEN"))
+    args = p.parse_args()
+
+    token = args.token or secure_prompt("Rancher admin API token: ")
+    base = normalize_url(args.hostname)
+    headers = rancher_headers(token)
+    verify = False
+    cluster_id = args.cluster_id or "local"
+    username = args.username
+    project_name = f"{username}-project"
+
+    projects = request_json(
+        "GET",
+        f"{base}/apis/management.cattle.io/v3/namespaces/{quote(cluster_id)}/projects",
+        headers=headers, verify=verify,
+    )
+    for project in projects.get("items", []):
+        if project.get("spec", {}).get("displayName") == project_name:
+            pid = project["metadata"]["name"]
+            request_json(
+                "DELETE",
+                f"{base}/apis/management.cattle.io/v3/namespaces/{quote(cluster_id)}/projects/{quote(pid)}",
+                headers=headers, verify=verify,
+            )
+            print(f"Deleted Rancher project {project_name}.")
+            break
+    else:
+        print(f"Rancher project {project_name} was not found.")
+
+    users = request_json("GET", f"{base}/apis/management.cattle.io/v3/users",
+                         headers=headers, verify=verify)
+    user = next((x for x in users.get("items", []) if x.get("username") == username), None)
+    if user:
+
+        try:
+            request_json(
+                "DELETE",
+                f"{base}/apis/management.cattle.io/v3/globalrolebindings/grb-{username}-user",
+                headers=headers,
+                verify=verify
+            )
+            print(f"Deleted GlobalRoleBinding for {username}.")
+        except Exception:
+            pass
+
+        uid = user["metadata"]["name"]
+        request_json("DELETE", f"{base}/apis/management.cattle.io/v3/users/{quote(uid)}",
+                     headers=headers, verify=verify)
+        print(f"Deleted Rancher user {username}.")
+    else:
+        print(f"Rancher user {username} was not found.")
+
+if __name__ == "__main__":
+    main()

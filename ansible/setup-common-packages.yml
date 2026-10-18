@@ -1,0 +1,18 @@
+---
+- name: Setup common packages
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install common packages
+      ansible.builtin.apt:
+        name:
+          - nmap
+          - quota
+          - vim
+        state: present

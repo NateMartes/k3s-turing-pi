@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+import argparse
+import getpass
+import os
+import time
+from urllib.parse import quote
+
+from platform_common import (
+    current_username, normalize_url, rancher_headers, request_json, secure_prompt,
+    require_root,
+)
+
+def main():
+    # Run this command as the administrator/root.
+    # --username identifies the target account only; never switch to that user's UID.
+    require_root()
+    p = argparse.ArgumentParser(
+        description="Create a local Rancher user, a per-user project, and attach the user's namespace."
+    )
+    p.add_argument("-u", "--username", default=current_username())
+    p.add_argument("-H", "--hostname", default="rancher.192.168.1.102.sslip.io")
+    p.add_argument("-p", "--password", default=None,
+                   help="User's new Rancher password. Omit to be prompted securely.")
+    p.add_argument("--cluster-id", default=os.environ.get("RANCHER_CLUSTER_ID"),
+                   help="Rancher managed cluster ID, e.g. local or c-m-abcde. Can use RANCHER_CLUSTER_ID.")
+    p.add_argument("--token", default=os.environ.get("RANCHER_TOKEN"),
+                   help="Rancher admin API token. Prefer RANCHER_TOKEN.")
+    args = p.parse_args()
+
+    token = args.token or secure_prompt("Rancher admin API token: ")
+    password = args.password or os.environ.get("USER_PASSWORD") or secure_prompt(f"New Rancher password for {args.username}: ")
+
+    base = normalize_url(args.hostname)
+    headers = rancher_headers(token)
+    verify = False
+    username = args.username
+    cluster_id = args.cluster_id or "local"
+    namespace = f"{username}-namespace"
+    project_name = f"{username}-project"
+
+    # Create User (idempotent lookup first)
+    users = request_json("GET", f"{base}/apis/management.cattle.io/v3/users",
+                         headers=headers, verify=verify)
+    user = next((x for x in users.get("items", []) if x.get("username") == username), None)
+    if not user:
+        body = {
+            "apiVersion": "management.cattle.io/v3",
+            "kind": "User",
+            "metadata": {"name": username},
+            "displayName": username,
+            "username": username,
+            "enabled": True,
+            "principalIds": [
+                f"{cluster_id}://{username}"
+            ]
+        }
+        user = request_json("POST", f"{base}/apis/management.cattle.io/v3/users",
+                            headers=headers, json_body=body, verify=verify)
+        pw_secret = {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {"name": username, "namespace": "cattle-local-user-passwords"},
+            "type": "Opaque",
+            "stringData": {"password": password},
+        }
+        request_json(
+            "POST",
+            f"{base}/api/v1/namespaces/cattle-local-user-passwords/secrets",
+            headers=headers,
+            json_body=pw_secret,
+            verify=verify,
+        )
+        print(f"Created Rancher user {username}.")
+    else:
+        print(f"Rancher user {username} already exists; password was not changed.")
+
+    # Make sure the user has a GlobalRoleName 'user' to ensure frontend redirection works
+    global_role_bindings = request_json(
+        "GET",
+        f"{base}/apis/management.cattle.io/v3/globalrolebindings",
+        headers=headers,
+        verify=verify
+    )
+
+    has_user_role = any(
+        binding.get("userName") == username
+        and binding.get("globalRoleName") == "user"
+        for binding in global_role_bindings.get("items", [])
+    )
+
+    if not has_user_role:
+        grb_body = {
+            "apiVersion": "management.cattle.io/v3",
+            "kind": "GlobalRoleBinding",
+            "metadata": {
+                "name": f"grb-{username}-user",
+            },
+            "globalRoleName": "user",
+            "userName": username,
+        }
+
+        request_json(
+            "POST",
+            f"{base}/apis/management.cattle.io/v3/globalrolebindings",
+            headers=headers,
+            json_body=grb_body,
+            verify=verify,
+        )
+
+        print(f"Granted Rancher 'user' global role to {username}")
+
+
+    user_id = user.get("metadata", {}).get("name") or username
+
+    projects = request_json(
+        "GET",
+        f"{base}/apis/management.cattle.io/v3/namespaces/{quote(cluster_id)}/projects",
+        headers=headers,
+        verify=verify,
+    )
+    project = next(
+        (x for x in projects.get("items", []) if x.get("spec", {}).get("displayName") == project_name),
+        None,
+    )
+    if not project:
+        body = {
+            "apiVersion": "management.cattle.io/v3",
+            "kind": "Project",
+            "metadata": {
+                "generateName": "p-",
+                "namespace": cluster_id,
+                "annotations": {"field.cattle.io/no-creator-rbac": "true"},
+            },
+            "spec": {
+                "clusterName": cluster_id,
+                "displayName": project_name,
+                "description": f"Managed project for Linux user {username}",
+            },
+        }
+        project = request_json(
+            "POST",
+            f"{base}/apis/management.cattle.io/v3/namespaces/{quote(cluster_id)}/projects",
+            headers=headers,
+            json_body=body,
+            verify=verify,
+        )
+        print(f"Created Rancher project {project_name}.")
+
+    project_id = project["metadata"]["name"]
+    project_key = f"{cluster_id}:{project_id}"
+
+    # Wait briefly for backing namespace, then fall back to the conventional name.
+    backing = project.get("status", {}).get("backingNamespace")
+    for _ in range(10):
+        if backing:
+            break
+        time.sleep(0.5)
+        project = request_json(
+            "GET",
+            f"{base}/apis/management.cattle.io/v3/namespaces/{quote(cluster_id)}/projects/{quote(project_id)}",
+            headers=headers,
+            verify=verify,
+        )
+        backing = project.get("status", {}).get("backingNamespace")
+    if not backing:
+        raise SystemExit("Project was created but Rancher has not populated status.backingNamespace yet.")
+
+    bindings = request_json(
+        "GET",
+        f"{base}/apis/management.cattle.io/v3/namespaces/{quote(backing)}/projectroletemplatebindings",
+        headers=headers,
+        verify=verify,
+    )
+    exists = any(
+        x.get("userName") == user_id and x.get("projectName") == project_key
+        for x in bindings.get("items", [])
+    )
+    if not exists:
+        rb = {
+            "apiVersion": "management.cattle.io/v3",
+            "kind": "ProjectRoleTemplateBinding",
+            "metadata": {"generateName": "prtb-", "namespace": backing},
+            "projectName": project_key,
+            "roleTemplateName": "project-member",
+            "userName": user_id,
+        }
+        request_json(
+            "POST",
+            f"{base}/apis/management.cattle.io/v3/namespaces/{quote(backing)}/projectroletemplatebindings",
+            headers=headers,
+            json_body=rb,
+            verify=verify,
+        )
+
+    # Assign existing namespace to project. This uses Rancher's proxy to the target cluster.
+    # The project annotation is the Rancher-supported linkage.
+    patch_headers = dict(headers)
+    patch_headers["Content-Type"] = "application/merge-patch+json"
+    request_json(
+        "PATCH",
+        f"{base}/k8s/clusters/{quote(cluster_id)}/api/v1/namespaces/{quote(namespace)}",
+        headers=patch_headers,
+        json_body={"metadata": {"annotations": {"field.cattle.io/projectId": project_key}}},
+        verify=verify,
+    )
+
+    print(f"Rancher account ready: {username}")
+    print(f"Project: {project_name} ({project_key})")
+    print(f"Namespace attached: {namespace}")
+
+if __name__ == "__main__":
+    main()

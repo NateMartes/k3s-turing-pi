@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  # Most of the services will live under this namespace
+  name: sysadmin-system
+  labels:
+    app.kubernetes.io/part-of: sysadmin-system

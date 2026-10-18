@@ -1,0 +1,532 @@
+#!/usr/bin/env python3
+"""
+trust-k3s-certs
+
+Discover certificates used by K3s Ingress endpoints and install appropriate
+self-signed/private CA certificates into:
+
+  1. The Ubuntu system CA trust store
+  2. Chromium's machine-wide CACertificates enterprise policy
+
+This allows all users on the machine to trust the same internal TLS roots.
+
+Discovery sources:
+  * Ingress TLS Secrets (ca.crt / tls.crt)
+  * The certificate chain actually served by every Ingress hostname on :443
+
+Requirements:
+  * Python 3
+  * openssl
+  * k3s or kubectl
+  * update-ca-certificates
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import os
+import re
+import shutil
+import ssl
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+TRUST_DIR = Path("/usr/local/share/ca-certificates/k3s")
+CHROMIUM_POLICY_DIR = Path("/etc/chromium/policies/managed")
+CHROMIUM_BROWSER_POLICY_DIR = Path("/etc/chromium-browser/policies/managed")
+CHROME_POLICY_DIR = Path("/etc/opt/chrome/policies/managed")
+POLICY_FILENAME = "k3s-trusted-cas.json"
+
+PEM_CERT_RE = re.compile(
+    rb"-----BEGIN CERTIFICATE-----\s+.*?-----END CERTIFICATE-----",
+    re.DOTALL,
+)
+
+
+class CommandError(RuntimeError):
+    pass
+
+
+def run(
+    cmd: list[str],
+    *,
+    input_bytes: bytes | None = None,
+    timeout: int | None = None,
+) -> subprocess.CompletedProcess:
+    try:
+        proc = subprocess.run(
+            cmd,
+            input=input_bytes,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise CommandError(f"Command timed out: {' '.join(cmd)}") from exc
+
+    if proc.returncode != 0:
+        raise CommandError(
+            f"Command failed ({proc.returncode}): {' '.join(cmd)}\n"
+            f"{proc.stderr.decode(errors='replace').strip()}"
+        )
+    return proc
+
+
+def choose_kubectl(explicit: str | None) -> list[str]:
+    if explicit:
+        return explicit.split()
+
+    if shutil.which("k3s"):
+        return ["k3s", "kubectl"]
+
+    if shutil.which("kubectl"):
+        return ["kubectl"]
+
+    raise SystemExit("ERROR: neither 'k3s' nor 'kubectl' was found in PATH.")
+
+
+def kubectl_json(kubectl: list[str], args: list[str]) -> dict:
+    return json.loads(run(kubectl + args).stdout)
+
+
+def split_pem_certificates(data: bytes) -> list[bytes]:
+    return [m.group(0).strip() + b"\n" for m in PEM_CERT_RE.finditer(data)]
+
+
+def fingerprint(cert: bytes) -> str:
+    return hashlib.sha256(cert).hexdigest()
+
+
+def sanitize(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", value)
+
+
+def openssl_text(cert: bytes, args: list[str]) -> str:
+    with tempfile.NamedTemporaryFile(suffix=".crt") as tmp:
+        tmp.write(cert)
+        tmp.flush()
+        out = run(["openssl", "x509", "-in", tmp.name, "-noout"] + args).stdout
+    return out.decode(errors="replace").strip()
+
+
+def cert_subject(cert: bytes) -> str:
+    return openssl_text(cert, ["-subject"]).removeprefix("subject=").strip()
+
+
+def cert_issuer(cert: bytes) -> str:
+    return openssl_text(cert, ["-issuer"]).removeprefix("issuer=").strip()
+
+
+def cert_dates(cert: bytes) -> str:
+    try:
+        return openssl_text(cert, ["-dates"]).replace("\n", ", ")
+    except CommandError:
+        return ""
+
+
+def is_self_signed(cert: bytes) -> bool:
+    try:
+        if cert_subject(cert) != cert_issuer(cert):
+            return False
+
+        with tempfile.NamedTemporaryFile(suffix=".crt") as tmp:
+            tmp.write(cert)
+            tmp.flush()
+            proc = subprocess.run(
+                ["openssl", "verify", "-CAfile", tmp.name, tmp.name],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        return proc.returncode == 0
+    except (CommandError, OSError):
+        return False
+
+
+def is_ca(cert: bytes) -> bool:
+    try:
+        text = openssl_text(cert, ["-text"])
+        return "CA:TRUE" in text
+    except CommandError:
+        return False
+
+
+def pem_to_der_b64(cert: bytes) -> str:
+    pem_text = cert.decode("ascii")
+    der = ssl.PEM_cert_to_DER_cert(pem_text)
+    return base64.b64encode(der).decode("ascii")
+
+
+def fetch_endpoint_chain(host: str, port: int = 443) -> list[bytes]:
+    """
+    Fetch the TLS chain exactly as served to clients.
+
+    openssl s_client commonly exits 0 even when verification fails, which is
+    useful here because discovery must work before the CA is trusted.
+    """
+    cmd = [
+        "openssl",
+        "s_client",
+        "-connect",
+        f"{host}:{port}",
+        "-servername",
+        host,
+        "-showcerts",
+    ]
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            input=b"",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=8,
+        )
+    except subprocess.TimeoutExpired:
+        return []
+
+    return split_pem_certificates(proc.stdout)
+
+
+def choose_trust_anchors(certs: list[bytes]) -> list[bytes]:
+    """
+    Prefer actual self-signed roots.
+
+    If an endpoint serves one self-signed certificate (common for internal
+    Portainer/Traefik certificates), that certificate becomes the trust anchor.
+    """
+    roots = [cert for cert in certs if is_self_signed(cert)]
+    if roots:
+        return roots
+
+    # If the chain has a CA cert but not the self-signed root, trusting that
+    # private intermediate can still make the local chain usable.
+    cas = [cert for cert in certs if is_ca(cert)]
+    if cas:
+        return [cas[-1]]
+
+    return []
+
+
+def candidate_from_secret(secret: dict) -> tuple[list[bytes], str]:
+    data = secret.get("data") or {}
+
+    ca_b64 = data.get("ca.crt")
+    if ca_b64:
+        decoded = base64.b64decode(ca_b64)
+        certs = split_pem_certificates(decoded)
+        if certs:
+            anchors = choose_trust_anchors(certs)
+            return (anchors or certs), "secret ca.crt"
+
+    tls_b64 = data.get("tls.crt")
+    if tls_b64:
+        decoded = base64.b64decode(tls_b64)
+        certs = split_pem_certificates(decoded)
+        anchors = choose_trust_anchors(certs)
+        if anchors:
+            return anchors, "self-signed/CA certificate from secret tls.crt"
+
+    return [], "no usable trust anchor in Secret"
+
+
+def discover_ingresses(
+    kubectl: list[str],
+    namespaces: set[str] | None,
+) -> list[dict]:
+    obj = kubectl_json(
+        kubectl,
+        ["get", "ingress", "--all-namespaces", "-o", "json"],
+    )
+
+    results = []
+    for ingress in obj.get("items", []):
+        namespace = ingress["metadata"]["namespace"]
+
+        if namespaces and namespace not in namespaces:
+            continue
+
+        name = ingress["metadata"]["name"]
+        spec = ingress.get("spec") or {}
+
+        hosts = set()
+        for rule in spec.get("rules", []) or []:
+            host = rule.get("host")
+            if host:
+                hosts.add(host)
+
+        secrets: dict[str, set[str]] = {}
+        for tls in spec.get("tls", []) or []:
+            tls_hosts = set(tls.get("hosts") or [])
+            hosts.update(tls_hosts)
+
+            secret = tls.get("secretName")
+            if secret:
+                secrets.setdefault(secret, set()).update(tls_hosts)
+
+        results.append(
+            {
+                "namespace": namespace,
+                "name": name,
+                "hosts": sorted(hosts),
+                "secrets": secrets,
+            }
+        )
+
+    return results
+
+
+def write_cert(source_id: str, cert: bytes) -> Path:
+    TRUST_DIR.mkdir(parents=True, exist_ok=True)
+
+    path = TRUST_DIR / f"{sanitize(source_id)}.crt"
+    current = path.read_bytes() if path.exists() else None
+
+    if current != cert:
+        path.write_bytes(cert)
+        os.chmod(path, 0o644)
+
+    return path
+
+
+def all_managed_certs() -> list[bytes]:
+    certs: list[bytes] = []
+    seen: set[str] = set()
+
+    if not TRUST_DIR.exists():
+        return certs
+
+    for path in sorted(TRUST_DIR.glob("*.crt")):
+        for cert in split_pem_certificates(path.read_bytes()):
+            fp = fingerprint(cert)
+            if fp in seen:
+                continue
+            seen.add(fp)
+            certs.append(cert)
+
+    return certs
+
+
+def chromium_policy_dirs() -> list[Path]:
+    """
+    Write Chromium's standard machine-wide policy path.
+
+    Ubuntu's older chromium-browser package used a different path, so if that
+    directory already exists we update it too. Google Chrome is supported when
+    installed as well.
+    """
+    dirs = [CHROMIUM_POLICY_DIR]
+
+    if CHROMIUM_BROWSER_POLICY_DIR.exists():
+        dirs.append(CHROMIUM_BROWSER_POLICY_DIR)
+
+    if shutil.which("google-chrome") or shutil.which("google-chrome-stable"):
+        dirs.append(CHROME_POLICY_DIR)
+
+    # Remove duplicates while preserving order.
+    unique = []
+    seen = set()
+    for path in dirs:
+        if str(path) not in seen:
+            seen.add(str(path))
+            unique.append(path)
+    return unique
+
+
+def write_chromium_policy(certs: list[bytes]) -> list[Path]:
+    values = sorted({pem_to_der_b64(cert) for cert in certs})
+    payload = {
+        "CACertificates": values,
+    }
+
+    written = []
+    for directory in chromium_policy_dirs():
+        directory.mkdir(parents=True, exist_ok=True)
+        os.chmod(directory, 0o755)
+
+        path = directory / POLICY_FILENAME
+        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        os.chmod(path, 0o644)
+        written.append(path)
+
+    return written
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Trust private/self-signed certificates used by K3s Ingress "
+            "endpoints system-wide."
+        )
+    )
+    parser.add_argument(
+        "-n",
+        "--namespace",
+        action="append",
+        default=[],
+        help="Only inspect this namespace. May be specified multiple times.",
+    )
+    parser.add_argument(
+        "--kubectl",
+        help="kubectl command to use, e.g. 'k3s kubectl' or 'kubectl'.",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+
+    if os.geteuid() != 0:
+        print(
+            "ERROR: this script must run as root because it updates the "
+            "system CA store and Chromium machine policy.",
+            file=sys.stderr,
+        )
+        return 1
+
+    for required in ("openssl", "update-ca-certificates"):
+        if shutil.which(required) is None:
+            print(
+                f"ERROR: required command '{required}' was not found.",
+                file=sys.stderr,
+            )
+            return 1
+
+    kubectl = choose_kubectl(args.kubectl)
+    namespace_filter = set(args.namespace) if args.namespace else None
+
+    try:
+        ingresses = discover_ingresses(kubectl, namespace_filter)
+    except (CommandError, json.JSONDecodeError) as exc:
+        print(f"ERROR: unable to query Kubernetes: {exc}", file=sys.stderr)
+        return 1
+
+    if not ingresses:
+        print("No Kubernetes Ingress resources were found.")
+        return 0
+
+    discovered_fps: set[str] = set()
+
+    for ingress in ingresses:
+        namespace = ingress["namespace"]
+        ingress_name = ingress["name"]
+
+        print(f"\n[{namespace}/{ingress_name}]")
+
+        # 1. Read any explicit TLS Secrets referenced by the Ingress.
+        for secret_name in sorted(ingress["secrets"]):
+            try:
+                secret = kubectl_json(
+                    kubectl,
+                    [
+                        "get",
+                        "secret",
+                        secret_name,
+                        "-n",
+                        namespace,
+                        "-o",
+                        "json",
+                    ],
+                )
+            except (CommandError, json.JSONDecodeError) as exc:
+                print(f"  Secret {secret_name}: unavailable ({exc})")
+                continue
+
+            try:
+                anchors, source = candidate_from_secret(secret)
+            except Exception as exc:
+                print(f"  Secret {secret_name}: invalid certificate ({exc})")
+                continue
+
+            if not anchors:
+                print(f"  Secret {secret_name}: {source}")
+                continue
+
+            for index, cert in enumerate(anchors):
+                fp = fingerprint(cert)
+                discovered_fps.add(fp)
+                path = write_cert(
+                    f"{namespace}-{ingress_name}-secret-{secret_name}-{index}",
+                    cert,
+                )
+                print(f"  Secret {secret_name}: trusted {cert_subject(cert)}")
+                print(f"    -> {path}")
+
+        # 2. Independently inspect the certificate clients actually see.
+        for host in ingress["hosts"]:
+            print(f"  Endpoint https://{host}:443")
+
+            chain = fetch_endpoint_chain(host)
+            if not chain:
+                print("    WARNING: could not retrieve a TLS certificate chain")
+                continue
+
+            leaf = chain[0]
+            print(f"    served: {cert_subject(leaf)}")
+            dates = cert_dates(leaf)
+            if dates:
+                print(f"    {dates}")
+
+            anchors = choose_trust_anchors(chain)
+            if not anchors:
+                print(
+                    "    WARNING: endpoint chain contains no self-signed/private "
+                    "CA certificate that can safely be installed as a trust anchor"
+                )
+                continue
+
+            for index, cert in enumerate(anchors):
+                fp = fingerprint(cert)
+                discovered_fps.add(fp)
+                path = write_cert(
+                    f"{namespace}-{ingress_name}-endpoint-{host}-{index}",
+                    cert,
+                )
+                print(f"    trusted anchor: {cert_subject(cert)}")
+                print(f"      -> {path}")
+
+    managed = all_managed_certs()
+
+    if not managed:
+        print(
+            "\nERROR: no usable CA/self-signed certificates were discovered.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print("\nUpdating Debian/Ubuntu system trust store...")
+    try:
+        proc = run(["update-ca-certificates"])
+        output = proc.stdout.decode(errors="replace").strip()
+        if output:
+            print(output)
+    except CommandError as exc:
+        print(f"ERROR: update-ca-certificates failed:\n{exc}", file=sys.stderr)
+        return 1
+
+    print("\nUpdating Chromium machine-wide CA policy...")
+    policy_paths = write_chromium_policy(managed)
+
+    for path in policy_paths:
+        print(f"  {path}")
+
+    print(
+        f"\nInstalled {len(managed)} unique trust certificate(s)."
+    )
+    print(
+        "\nChromium: open chrome://policy and click 'Reload policies', "
+        "or completely restart Chromium."
+    )
+    print(
+        "The policy should appear as 'CACertificates'."
+    )
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

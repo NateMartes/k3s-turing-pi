@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import shutil
+from pathlib import Path
+
+from platform_common import (
+    die,
+    get_marker,
+    get_user,
+    home_path,
+    info,
+    require_root,
+    run,
+    run_as_target_user,
+)
+
+
+MARKER = get_marker("Docker Rootless")
+
+
+def determine_username(argument: str | None) -> str:
+    if argument:
+        return argument
+
+    sudo_user = os.environ.get("SUDO_USER")
+
+    if sudo_user and sudo_user != "root":
+        return sudo_user
+
+    die(
+        "A target username is required when running as root.\n"
+        "Example: uninstall-docker-rootless -u bob"
+    )
+
+
+def ensure_user_runtime(username: str) -> None:
+    user = get_user(username)
+
+    run(
+        ["loginctl", "enable-linger", username],
+        check=False,
+    )
+
+    run(
+        ["systemctl", "start", f"user@{user.pw_uid}.service"],
+        check=False,
+    )
+
+
+def stop_docker_service(username: str) -> None:
+    info(f"Stopping rootless Docker service for {username}")
+
+    run_as_target_user(
+        username,
+        [
+            "systemctl",
+            "--user",
+            "disable",
+            "--now",
+            "docker.service",
+        ],
+        check=False,
+    )
+
+
+def uninstall_with_setup_tool(username: str) -> None:
+    home = home_path(username)
+
+    candidates = [
+        Path("/usr/bin/dockerd-rootless-setuptool.sh"),
+        home / "bin/dockerd-rootless-setuptool.sh",
+    ]
+
+    tool = next(
+        (candidate for candidate in candidates if candidate.exists()),
+        None,
+    )
+
+    if tool is None:
+        return
+
+    info("Running Docker rootless uninstall tool")
+
+    run_as_target_user(
+        username,
+        [str(tool), "uninstall"],
+        check=False,
+    )
+
+
+def remove_user_binaries(username: str) -> None:
+    home = home_path(username)
+    bin_dir = home / "bin"
+
+    if not bin_dir.exists():
+        return
+
+    binaries = [
+        "containerd",
+        "containerd-shim-runc-v2",
+        "ctr",
+        "docker",
+        "docker-init",
+        "docker-proxy",
+        "dockerd",
+        "dockerd-rootless-setuptool.sh",
+        "dockerd-rootless.sh",
+        "rootlesskit",
+        "rootlesskit-docker-proxy",
+        "runc",
+        "vpnkit",
+    ]
+
+    info(f"Removing rootless Docker binaries from {bin_dir}")
+
+    for name in binaries:
+        path = bin_dir / name
+
+        if path.exists() or path.is_symlink():
+            print(f"Removing {path}")
+            path.unlink()
+
+
+def remove_systemd_files(username: str) -> None:
+    home = home_path(username)
+    systemd_dir = home / ".config/systemd/user"
+
+    paths = [
+        systemd_dir / "docker.service",
+        systemd_dir / "docker.service.d",
+    ]
+
+    for path in paths:
+        if path.is_dir():
+            print(f"Removing {path}")
+            shutil.rmtree(path)
+
+        elif path.exists():
+            print(f"Removing {path}")
+            path.unlink()
+
+    if systemd_dir.exists():
+        run_as_target_user(
+            username,
+            ["systemctl", "--user", "daemon-reload"],
+            check=False,
+        )
+
+
+def remove_profile_configuration(username: str) -> None:
+    home = home_path(username)
+    profile = home / ".profile"
+
+    if not profile.exists():
+        return
+
+    lines = profile.read_text().splitlines()
+    output = []
+
+    skip_path = False
+    skip_host = False
+
+    for line in lines:
+        if line.strip() == MARKER.strip():
+            skip_path = True
+            skip_host = True
+            continue
+
+        if skip_path and line.strip() == 'export PATH="$HOME/bin:$PATH"':
+            skip_path = False
+            continue
+
+        if skip_host and line.strip().startswith("export DOCKER_HOST="):
+            skip_host = False
+            continue
+
+        output.append(line)
+
+    profile.write_text(
+        "\n".join(output)
+        + ("\n" if output else "")
+    )
+
+    user = get_user(username)
+
+    os.chown(
+        profile,
+        user.pw_uid,
+        user.pw_gid,
+    )
+
+
+def purge_docker_data(username: str) -> None:
+    home = home_path(username)
+
+    paths = [
+        home / ".local/share/docker",
+        home / ".config/docker",
+        home / ".docker",
+    ]
+
+    for path in paths:
+        if path.exists():
+            print(f"Removing {path}")
+            shutil.rmtree(path)
+
+
+def remove_runtime_socket(username: str) -> None:
+    user = get_user(username)
+    socket_path = Path(f"/run/user/{user.pw_uid}/docker.sock")
+
+    if socket_path.exists():
+        try:
+            socket_path.unlink()
+        except OSError:
+            pass
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Remove rootless Docker from a Linux user."
+    )
+
+    parser.add_argument(
+        "-u",
+        "--username",
+        default=None,
+    )
+
+    parser.add_argument(
+        "--purge-data",
+        action="store_true",
+        help="Also delete Docker images, containers, volumes, and client configuration.",
+    )
+
+    args = parser.parse_args()
+
+    require_root()
+
+    username = determine_username(args.username)
+    user = get_user(username)
+
+    if user.pw_uid == 0:
+        die("This script is intended for rootless Docker users, not root.")
+
+    ensure_user_runtime(username)
+
+    stop_docker_service(username)
+    uninstall_with_setup_tool(username)
+
+    remove_systemd_files(username)
+    remove_user_binaries(username)
+    remove_profile_configuration(username)
+    remove_runtime_socket(username)
+
+    if args.purge_data:
+        info("Removing Docker data")
+        purge_docker_data(username)
+
+    print()
+    print(f"Rootless Docker removed for {username}.")
+    print("User-local Docker binaries were removed.")
+
+    if args.purge_data:
+        print("Docker data was also removed.")
+    else:
+        print("Docker data was preserved.")
+
+    print("System-wide Docker packages were left untouched.")
+
+
+if __name__ == "__main__":
+    main()

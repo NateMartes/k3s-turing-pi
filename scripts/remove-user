@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import pwd
+from pathlib import Path
+import subprocess
+import time
+
+from user_common import (
+    DEFAULT_PORTAINER_HOST, DEFAULT_RANCHER_HOST, home_for, load_state,
+    remove_state, require_root, run, run_plumbing, state_path, user_exists,
+    validate_username, DEFAULT_PORTAINER_API_KEY, DEFAULT_RANCHER_API_KEY
+)
+
+def yes(prompt: str) -> bool:
+    return input(prompt).strip().lower() in {"y", "yes"}
+
+def main():
+    p = argparse.ArgumentParser(description="Remove a user's platform resources and Linux account.")
+    p.add_argument("-u", "--username", required=True)
+    p.add_argument("--purge-data", action="store_true",
+                   help="Delete the user's home directory and rootless Docker data as well.")
+    p.add_argument("--yes", action="store_true", help="Skip confirmation.")
+    args = p.parse_args()
+
+    require_root()
+    username = validate_username(args.username)
+    state = load_state(username)
+
+    home = state.get("home")
+    if not home and user_exists(username):
+        home = str(home_for(username))
+
+    rancher_host = state.get("rancher_host", DEFAULT_RANCHER_HOST)
+    portainer_host = state.get("portainer_host", DEFAULT_PORTAINER_HOST)
+    cluster_id = state.get("cluster_id") or os.environ.get("RANCHER_CLUSTER_ID")
+    agent_port = state.get("agent_port", "?")
+
+    print(f"Resources associated with {username}")
+    print("--------------------------------")
+    print(f"Linux account:          {'present' if user_exists(username) else 'not found'}")
+    print(f"Home directory:         {home or 'unknown'}")
+    print(f"Home data action:       {'DELETE' if args.purge_data else 'PRESERVE'}")
+    print(f"Rootless Docker:        {state.get('docker_rootless', 'unknown')}")
+    print(f"Portainer Agent:        {state.get('portainer_agent', 'unknown')} (port {agent_port})")
+    print(f"K3s namespace:          {state.get('namespace', username + '-namespace')}")
+    print(f"Rancher user/project:   {username} / {state.get('rancher_project', username + '-project')}")
+    print(f"Portainer user/env:     {username} / {state.get('portainer_environment', username + '-docker')}")
+    print(f"State file:             {state_path(username)}")
+
+    if not args.yes and not yes(f"\nRemove these resources for {username}? [y/N] "):
+        print("Cancelled.")
+        return
+
+    # Reverse provisioning order.
+    print("\n[1/5] Removing Portainer account/environment")
+    pa = ["-u", username, "-H", portainer_host]
+    run_plumbing("uninstall-portainer-account", pa, check=False, extra_env={
+            "PORTAINER_API_KEY": DEFAULT_PORTAINER_API_KEY
+        }
+    )
+
+    print("\n[2/5] Removing Rancher project/account")
+    ra = ["-u", username, "-H", rancher_host]
+    if cluster_id:
+        ra += ["--cluster-id", cluster_id]
+    run_plumbing("uninstall-rancher-account", ra, check=False, extra_env={
+            "RANCHER_TOKEN": DEFAULT_RANCHER_API_KEY
+        }
+    )
+
+    print("\n[3/5] Removing K3s namespace")
+    run_plumbing("uninstall-k3s-namespace", ["-u", username], check=False)
+
+    print("\n[4/5] Removing Portainer Agent")
+    run_plumbing("uninstall-portainer-agent", ["-u", username], check=False, extra_env={
+            "PORTAINER_API_KEY": DEFAULT_PORTAINER_API_KEY
+        }
+    )
+
+    print("\n[5/5] Removing rootless Docker")
+    docker_args = ["-u", username]
+    if args.purge_data:
+        docker_args.append("--purge-data")
+    run_plumbing("uninstall-docker-rootless", docker_args, check=False)
+
+    if user_exists(username):
+        print("\nRemoving Linux account...")
+
+        print("\nTerminating user processes...")
+
+        run(
+            ["loginctl", "terminate-user", username],
+            check=False,
+        )
+
+        for _ in range(20):
+            result = subprocess.run(
+                ["pgrep", "-u", username],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False
+            )
+            if result.returncode != 0:
+                break
+            time.sleep(0.25)
+
+        cmd = ["userdel"]
+        if args.purge_data:
+            cmd.append("--remove")
+        cmd.append(username)
+        run(cmd, check=False)
+
+    if args.purge_data and home and Path(home).exists():
+        # userdel -r may leave a home behind if it is on an unusual mount.
+        import shutil
+        shutil.rmtree(home, ignore_errors=True)
+
+    remove_state(username)
+    print(f"\nRemoved platform resources for {username}.")
+    if not args.purge_data and home:
+        print(f"Home data was preserved at {home}.")
+        print("Use --purge-data if you intend to delete user-owned local data.")
+
+if __name__ == "__main__":
+    main()

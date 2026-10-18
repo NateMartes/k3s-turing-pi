@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import socket
+
+from platform_common import (
+    current_username, default_agent_address, normalize_url, portainer_headers,
+    request_json, secure_prompt,
+    require_root,)
+
+def main():
+    # Run this command as the administrator/root.
+    # --username identifies the target account only; never switch to that user's UID.
+    require_root()
+    p = argparse.ArgumentParser(
+        description="Create a Portainer user, register that user's Agent environment, and grant access."
+    )
+    p.add_argument("-u", "--username", default=current_username())
+    p.add_argument("-H", "--hostname", default="portainer.192.168.1.102.sslip.io")
+    p.add_argument("-p", "--password", default=None,
+                   help="New Portainer user password. Omit to be prompted.")
+    p.add_argument("--api-key", default=os.environ.get("PORTAINER_API_KEY"),
+                   help="Portainer admin API key. Prefer PORTAINER_API_KEY.")
+    p.add_argument("--agent-address", default=None,
+                   help="Address Portainer Server can reach, e.g. node1.example:9001.")
+    p.add_argument("--agent-port", type=int, default=9001)
+    p.add_argument("--role-id", type=int, default=2,
+                   help="Portainer environment access role ID. Default 2 = standard environment user in common setups.")
+    args = p.parse_args()
+
+    api_key = args.api_key or secure_prompt("Portainer admin API key: ")
+    password = args.password or os.environ.get("USER_PASSWORD") or secure_prompt(f"New Portainer password for {args.username}: ")
+    base = normalize_url(args.hostname)
+    headers = portainer_headers(api_key)
+    verify = False
+    username = args.username
+    env_name = f"{username}-docker"
+    agent_addr = args.agent_address or default_agent_address(args.agent_port)
+    if ":" not in agent_addr.rsplit("/", 1)[-1]:
+        agent_addr = f"{agent_addr}:{args.agent_port}"
+    agent_url = agent_addr if agent_addr.startswith("tcp://") else f"tcp://{agent_addr}"
+
+    users = request_json("GET", f"{base}/api/users", headers=headers, verify=verify)
+    user = next((u for u in users if u.get("Username", "").lower() == username.lower()), None)
+    if not user:
+        user = request_json(
+            "POST", f"{base}/api/users",
+            headers=headers,
+            json_body={"Username": username, "Password": password, "Role": 2},
+            verify=verify,
+        )
+        print(f"Created Portainer user {username}.")
+    else:
+        print(f"Portainer user {username} already exists; password was not changed.")
+
+    endpoints = request_json("GET", f"{base}/api/endpoints", headers=headers, verify=verify)
+    endpoint = next((e for e in endpoints if e.get("Name") == env_name), None)
+    if not endpoint:
+        form = {
+            "Name": env_name,
+            "EndpointCreationType": "2",
+            "URL": agent_url,
+            "TLS": "true",
+            "TLSSkipVerify": "true",
+            "TLSSkipClientVerify": "true",
+            "ContainerEngine": "docker",
+        }
+        endpoint = request_json(
+            "POST", f"{base}/api/endpoints",
+            headers=headers,
+            form=form,
+            verify=verify,
+        )
+        print(f"Registered Portainer Agent environment {env_name} at {agent_url}.")
+    else:
+        print(f"Portainer environment {env_name} already exists.")
+
+    uid = str(user["Id"])
+    eid = endpoint["Id"]
+
+    # Portainer stores per-environment RBAC in UserAccessPolicies.
+    # Preserve existing policies and add/replace this user's policy.
+    policy = dict(endpoint.get("UserAccessPolicies") or {})
+    policy[uid] = {"RoleId": args.role_id}
+
+    update_body = {
+        "Name": endpoint.get("Name", env_name),
+        "URL": endpoint.get("URL", agent_url),
+        "PublicURL": endpoint.get("PublicURL", ""),
+        "GroupID": endpoint.get("GroupId", 1),
+        "TLS": True,
+        "TLSSkipVerify": True,
+        "TLSSkipClientVerify": True,
+        "UserAccessPolicies": policy,
+        "TeamAccessPolicies": endpoint.get("TeamAccessPolicies") or {},
+    }
+
+    # Newer Portainer versions accept endpoint access policies through endpoint update.
+    # If a deployment has policy enforcement enabled, Portainer may reject this and
+    # an administrator should instead manage access through its configured policy.
+    request_json(
+        "PUT", f"{base}/api/endpoints/{eid}",
+        headers=headers,
+        json_body=update_body,
+        verify=verify,
+    )
+
+    print(f"Portainer account ready: {username}")
+    print(f"Environment: {env_name} (ID {eid})")
+    print(f"Agent address: {agent_url}")
+
+if __name__ == "__main__":
+    main()
