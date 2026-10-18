@@ -21,6 +21,23 @@ Currently this setup supports:
 
 ## Getting Started
 
+0. Pull this down, and store it in `$HOME`
+
+   **Note**: The commands are taking from the POV of `$HOME`, so if you planning something
+   different, please double check commands (not saying you would NOT double check them already...)
+
+   This copies this repo into your `$HOME`, but also **overwrites any match file names**, so
+   be careful...
+   ```bash
+   curl -fsSL https://github.com/NateMartes/k3s-turing-pi/archive/HEAD.tar.gz \
+     | tar -xz --strip-components=1 -C "$HOME"
+   ```
+
+   you could also...
+   ```bash
+   git clone https://github.com/NateMartes/k3s-turing-pi.git
+   ```
+
 1. Make sure this account has SSH access to all nodes in your cluster:
 
    ```bash
