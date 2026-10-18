@@ -72,6 +72,13 @@
    tpi flash -n <the node you put the hardware on> -i /your/new.img
    ```
 
+   **Note**: If you get something like:
+   ```bash
+    Error occured during flashing: "Compute module's USB interface not found or supported"
+   ```
+
+   You might try moving your node to a different slot and try flashing it there.
+
 10. Wait for it to fully finish.
 
 11. Power the node on:
@@ -100,6 +107,9 @@
     picocom -b 115200 /dev/ttyS<node number>
     ```
 
+    **Note**: Your setup process may be different, below follows a typical server setup.
+    If you have a desktop setup for instance, you probably will have to do some GUI setup
+    instead.
 14. Log in.
 
     Depending on your OS, it might be `ubuntu:ubuntu`.
@@ -110,7 +120,7 @@
     sudo useradd -m -s /bin/bash sysadmin \
       && echo 'sysadmin:<password>' | sudo chpasswd \
       && sudo usermod -aG sudo sysadmin \
-      && echo 'sysadmin ALL=(ALL:ALL) ALL' | sudo tee /etc/sudoers.d/sysadmin >/dev/null \
+      && echo 'sysadmin ALL=(ALL:ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/sysadmin >/dev/null \
       && sudo chmod 440 /etc/sudoers.d/sysadmin
     ```
 

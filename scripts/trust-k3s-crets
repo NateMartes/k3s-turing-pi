@@ -313,16 +313,14 @@ def all_managed_certs() -> list[bytes]:
 
 def chromium_policy_dirs() -> list[Path]:
     """
-    Write Chromium's standard machine-wide policy path.
+    Return Chromium's machine-wide policy paths.
 
-    Ubuntu's older chromium-browser package used a different path, so if that
-    directory already exists we update it too. Google Chrome is supported when
-    installed as well.
+    Ubuntu's chromium-browser package uses a different path from other
+    Chromium builds. Always include both paths so write_chromium_policy() can
+    create the required directory when it does not exist yet. Google Chrome is
+    supported when installed as well.
     """
-    dirs = [CHROMIUM_POLICY_DIR]
-
-    if CHROMIUM_BROWSER_POLICY_DIR.exists():
-        dirs.append(CHROMIUM_BROWSER_POLICY_DIR)
+    dirs = [CHROMIUM_POLICY_DIR, CHROMIUM_BROWSER_POLICY_DIR]
 
     if shutil.which("google-chrome") or shutil.which("google-chrome-stable"):
         dirs.append(CHROME_POLICY_DIR)
