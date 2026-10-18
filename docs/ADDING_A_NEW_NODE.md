@@ -50,10 +50,20 @@
    You should be prompted for the BMC credentials,
    which should be `username: root` and `password: turing`.
 
-8. Power off the node (just in case):
+8. Prepare the node:
 
    ```bash
-   tpi power -n <node number> off
+   tpi power -n 1 off
+   tpi usb -b -n 1 flash
+   tpi power -n 1 on
+   sleep 5
+   tpi usb -n 1 status
+   ```
+
+   You should see something like:
+   ```bash
+   USB Host  --> USB Device 
+   bmc     -->   node 1
    ```
 
 9. Flash the node:
