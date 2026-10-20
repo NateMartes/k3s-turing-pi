@@ -75,3 +75,43 @@
       ansible.builtin.file:
         path: /tmp/install-k3s.sh
         state: absent
+
+
+- name: Remove residual K3s networking
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check for residual K3s network interfaces
+      ansible.builtin.command:
+        argv:
+          - ip
+          - link
+          - show
+          - "{{ item }}"
+      loop:
+        - flannel.1
+        - cni0
+      register: k3s_network_interfaces
+      changed_when: false
+      failed_when: false
+
+    - name: Delete residual K3s network interfaces
+      ansible.builtin.command:
+        argv:
+          - ip
+          - link
+          - delete
+          - "{{ item.item }}"
+      loop: "{{ k3s_network_interfaces.results }}"
+      when: item.rc == 0
+      changed_when: true
+
+    - name: Remove residual runtime network state
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /run/flannel
+        - /run/k3s

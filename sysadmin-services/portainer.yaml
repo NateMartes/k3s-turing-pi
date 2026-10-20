@@ -36,10 +36,10 @@ spec:
       tls:
           # This should match the IP of the node this runs on
         - hosts:
-           - portainer.192.168.1.102.sslip.io 
+           - portainer.10.42.0.31.sslip.io
       hosts:
           # This should match the IP of the node this runs on
-        - host: portainer.192.168.1.102.sslip.io
+        - host: portainer.10.42.0.31.sslip.io
           paths:
             - path: "/"
 

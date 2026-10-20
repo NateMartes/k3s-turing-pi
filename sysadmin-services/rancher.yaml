@@ -17,7 +17,7 @@ spec:
   valuesContent: |-
 
     # This IP address should match the node it runs on
-    hostname: rancher.192.168.1.102.sslip.io
+    hostname: rancher.10.42.0.31.sslip.io
 
     image:
       repository: rancher/rancher

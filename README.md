@@ -76,8 +76,12 @@ Currently this setup supports:
 6. Set up K3s:
 
    ```bash
-   cd $HOME/ansible && ansible-playbooks -i inventory.yml setup-k3s.yml
+   cd $HOME/ansible && ansible-playbook -i inventory.yml setup-k3s.yml
    ```
+
+   The default K3s Pod network is `10.244.0.0/16`, deliberately separate from
+   the `10.42.0.0/24` host LAN. Review `ansible/group_vars/all.yml` before
+   provisioning a cluster on a different LAN.
 
 7. Deploy sysadmin services to K3s:
 

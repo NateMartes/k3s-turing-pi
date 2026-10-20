@@ -19,3 +19,21 @@ ansible-playbook <playbook> -i inventory.yml
 - `remove-k3s.yml`: Removes K3s from all nodes.
 - `setup-common-packages.yml`: Sets up all nodes to have common packages throughout.
 - `setup-desktop-packages.yml`: Installs specific packages for nodes with GUIs.
+
+## K3s networking
+
+Cluster network defaults are stored in `group_vars/all.yml`:
+
+- Host LAN: `10.42.0.0/24`
+- Pod network: `10.244.0.0/16`
+- Service network: `10.43.0.0/16`
+- Flannel interface: `end1`
+
+The setup playbook stops before changing K3s if these networks overlap or a
+node's `ansible_host` address is outside the configured LAN. The Pod network
+supports additional nodes without assigning Pod addresses from the physical
+LAN. Changing the Pod or Service CIDR of an existing cluster requires removing
+and reinstalling K3s; restarting an existing cluster is not a migration.
+
+`remove-k3s.yml` is destructive. It removes K3s state, local K3s storage, CNI
+configuration, and residual Flannel/CNI interfaces from every inventory node.

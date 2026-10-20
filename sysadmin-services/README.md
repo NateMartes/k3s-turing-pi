@@ -46,13 +46,13 @@ and replace it with a hostname that resolves to a K3s node.
 Example:
 
 ```yaml
-hostname: rancher.192.168.1.50.sslip.io
+hostname: rancher.10.42.0.31.sslip.io
 ```
 
 Edit `portainer.yaml`:
 
 ```yaml
-host: portainer.192.168.1.50.sslip.io
+host: portainer.10.42.0.31.sslip.io
 ```
 
 and replace it with a hostname that resolves to a K3s node.
@@ -60,7 +60,7 @@ and replace it with a hostname that resolves to a K3s node.
 ## Apply
 
 ```bash
-sudo -E kubectl apply -k ./sysadmin-system
+sudo -E kubectl apply -k ./sysadmin-services
 ```
 
 ## Check
