@@ -27,13 +27,17 @@ Cluster network defaults are stored in `group_vars/all.yml`:
 - Host LAN: `10.42.0.0/24`
 - Pod network: `10.244.0.0/16`
 - Service network: `10.43.0.0/16`
-- Flannel interface: `end1`
+- Flannel interface: automatically selected from the node route
 
 The setup playbook stops before changing K3s if these networks overlap or a
 node's `ansible_host` address is outside the configured LAN. The Pod network
 supports additional nodes without assigning Pod addresses from the physical
 LAN. Changing the Pod or Service CIDR of an existing cluster requires removing
 and reinstalling K3s; restarting an existing cluster is not a migration.
+
+`k3s_flannel_iface` is empty by default so a reboot or a new node with a
+different interface name does not prevent K3s from starting. Set it per host in
+`inventory.yml` only when the interface name is known to be stable.
 
 `remove-k3s.yml` is destructive. It removes K3s state, local K3s storage, CNI
 configuration, and residual Flannel/CNI interfaces from every inventory node.
