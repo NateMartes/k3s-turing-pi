@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Optional
 
 STATE_ROOT = Path(__file__).resolve().parent / "state"
-DEFAULT_RANCHER_HOST = "rancher.192.168.1.102.sslip.io"
-DEFAULT_PORTAINER_HOST = "portainer.192.168.1.102.sslip.io"
+DEFAULT_RANCHER_HOST = os.getenv("RANCHER_HOSTNAME")
+DEFAULT_PORTAINER_HOST = os.getenv("PORTAINER_HOSTNAME")
 DEFAULT_PORTAINER_API_KEY = os.getenv("PORTAINER_API_KEY")
 DEFAULT_RANCHER_API_KEY = os.getenv("RANCHER_TOKEN")
 
@@ -33,6 +33,14 @@ SYMBOLS = "!@#$%&*+-_=?"
 def die(message: str, code: int = 1):
     print(f"ERROR: {message}", file=sys.stderr)
     raise SystemExit(code)
+
+
+def require_hostname(value: Optional[str], variable: str, option: str) -> str:
+    if value:
+        return value
+    die(
+        f"{variable} is not set. Source sysadmin-env or provide {option}."
+    )
 
 
 def require_root():

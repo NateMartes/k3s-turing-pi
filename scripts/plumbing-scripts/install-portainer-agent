@@ -3,8 +3,9 @@ import argparse
 from pathlib import Path
 
 from platform_common import (
-    current_username, docker_cmd, docker_socket, get_user, home_path, info,
-    require_root_for_other_user, run_as_target_user,
+    DEFAULT_PORTAINER_HOST, current_username, docker_cmd, docker_socket, get_user,
+    home_path, info, require_root_for_other_user, run_as_target_user,
+    require_hostname,
 )
 
 CONTAINER = "portainer-agent"
@@ -14,7 +15,7 @@ def main():
         description="Run a Portainer Agent against a user's rootless Docker socket."
     )
     p.add_argument("-u", "--username", default=current_username())
-    p.add_argument("-H", "--hostname", default="portainer.192.168.1.102.sslip.io",
+    p.add_argument("-H", "--hostname", default=DEFAULT_PORTAINER_HOST,
                    help="Portainer server hostname (stored as metadata only; the normal Agent is pull-based).")
     p.add_argument("--port", type=int, default=9001,
                    help="Host port exposed by this user's agent. Use a unique port per user on shared hosts.")
@@ -22,6 +23,7 @@ def main():
     p.add_argument("--agent-secret", default=None,
                    help="Optional AGENT_SECRET. Prefer PORTAINER_AGENT_SECRET env when scripting.")
     args = p.parse_args()
+    args.hostname = require_hostname(args.hostname, "PORTAINER_HOSTNAME")
 
     username = args.username
     get_user(username)

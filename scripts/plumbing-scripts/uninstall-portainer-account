@@ -3,8 +3,9 @@ import argparse
 import os
 
 from platform_common import (
-    current_username, normalize_url, portainer_headers, request_json, secure_prompt,
-    require_root,)
+    DEFAULT_PORTAINER_HOST, current_username, normalize_url, portainer_headers,
+    request_json, secure_prompt, require_root, require_hostname,
+)
 
 def main():
     # Run this command as the administrator/root.
@@ -12,11 +13,12 @@ def main():
     require_root()
     p = argparse.ArgumentParser(description="Remove a user's Portainer account and its managed environment.")
     p.add_argument("-u", "--username", default=current_username())
-    p.add_argument("-H", "--hostname", default="portainer.192.168.1.102.sslip.io")
+    p.add_argument("-H", "--hostname", default=DEFAULT_PORTAINER_HOST)
     p.add_argument("--api-key", default=os.environ.get("PORTAINER_API_KEY"))
     p.add_argument("--keep-environment", action="store_true",
                    help="Delete only the account, leaving <user>-docker registered.")
     args = p.parse_args()
+    args.hostname = require_hostname(args.hostname, "PORTAINER_HOSTNAME")
 
     api_key = args.api_key or secure_prompt("Portainer admin API key: ")
     base = normalize_url(args.hostname)

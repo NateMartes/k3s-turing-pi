@@ -4,8 +4,8 @@ import os
 import socket
 
 from platform_common import (
-    current_username, default_agent_address, normalize_url, portainer_headers,
-    request_json, secure_prompt,
+    DEFAULT_PORTAINER_HOST, current_username, default_agent_address, normalize_url,
+    portainer_headers, request_json, secure_prompt, require_hostname,
     require_root,)
 
 def main():
@@ -16,7 +16,7 @@ def main():
         description="Create a Portainer user, register that user's Agent environment, and grant access."
     )
     p.add_argument("-u", "--username", default=current_username())
-    p.add_argument("-H", "--hostname", default="portainer.192.168.1.102.sslip.io")
+    p.add_argument("-H", "--hostname", default=DEFAULT_PORTAINER_HOST)
     p.add_argument("-p", "--password", default=None,
                    help="New Portainer user password. Omit to be prompted.")
     p.add_argument("--api-key", default=os.environ.get("PORTAINER_API_KEY"),
@@ -27,6 +27,7 @@ def main():
     p.add_argument("--role-id", type=int, default=2,
                    help="Portainer environment access role ID. Default 2 = standard environment user in common setups.")
     args = p.parse_args()
+    args.hostname = require_hostname(args.hostname, "PORTAINER_HOSTNAME")
 
     api_key = args.api_key or secure_prompt("Portainer admin API key: ")
     password = args.password or os.environ.get("USER_PASSWORD") or secure_prompt(f"New Portainer password for {args.username}: ")

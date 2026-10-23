@@ -1,2 +1,4 @@
 export PORTAINER_API_KEY="changeme"
+export PORTAINER_HOSTNAME="changeme"
 export RANCHER_TOKEN="changeme"
+export RANCHER_HOSTNAME="changeme"

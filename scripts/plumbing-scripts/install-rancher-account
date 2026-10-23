@@ -6,8 +6,8 @@ import time
 from urllib.parse import quote
 
 from platform_common import (
-    current_username, normalize_url, rancher_headers, request_json, secure_prompt,
-    require_root,
+    DEFAULT_RANCHER_HOST, current_username, normalize_url, rancher_headers,
+    request_json, secure_prompt, require_root, require_hostname,
 )
 
 def main():
@@ -18,7 +18,7 @@ def main():
         description="Create a local Rancher user, a per-user project, and attach the user's namespace."
     )
     p.add_argument("-u", "--username", default=current_username())
-    p.add_argument("-H", "--hostname", default="rancher.192.168.1.102.sslip.io")
+    p.add_argument("-H", "--hostname", default=DEFAULT_RANCHER_HOST)
     p.add_argument("-p", "--password", default=None,
                    help="User's new Rancher password. Omit to be prompted securely.")
     p.add_argument("--cluster-id", default=os.environ.get("RANCHER_CLUSTER_ID"),
@@ -26,6 +26,7 @@ def main():
     p.add_argument("--token", default=os.environ.get("RANCHER_TOKEN"),
                    help="Rancher admin API token. Prefer RANCHER_TOKEN.")
     args = p.parse_args()
+    args.hostname = require_hostname(args.hostname, "RANCHER_HOSTNAME")
 
     token = args.token or secure_prompt("Rancher admin API token: ")
     password = args.password or os.environ.get("USER_PASSWORD") or secure_prompt(f"New Rancher password for {args.username}: ")

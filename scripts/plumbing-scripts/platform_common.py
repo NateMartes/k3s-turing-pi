@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 MANAGED_MARKER = "# Managed by sysadmin. Created by {}"
+DEFAULT_RANCHER_HOST = os.environ.get("RANCHER_HOSTNAME")
+DEFAULT_PORTAINER_HOST = os.environ.get("PORTAINER_HOSTNAME")
 
 def get_marker(service):
     return MANAGED_MARKER.format(service)
@@ -21,6 +23,13 @@ def get_marker(service):
 def die(message: str, code: int = 1) -> None:
     print(f"ERROR: {message}", file=sys.stderr)
     raise SystemExit(code)
+
+def require_hostname(value: Optional[str], variable: str) -> str:
+    if value:
+        return value
+    die(
+        f"{variable} is not set. Source sysadmin-env or provide --hostname."
+    )
 
 def info(message: str) -> None:
     print(f"==> {message}")

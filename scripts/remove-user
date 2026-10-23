@@ -9,7 +9,8 @@ import time
 from user_common import (
     DEFAULT_PORTAINER_HOST, DEFAULT_RANCHER_HOST, home_for, load_state,
     remove_state, require_root, run, run_plumbing, state_path, user_exists,
-    validate_username, DEFAULT_PORTAINER_API_KEY, DEFAULT_RANCHER_API_KEY
+    validate_username, DEFAULT_PORTAINER_API_KEY, DEFAULT_RANCHER_API_KEY,
+    require_hostname,
 )
 
 def yes(prompt: str) -> bool:
@@ -31,8 +32,16 @@ def main():
     if not home and user_exists(username):
         home = str(home_for(username))
 
-    rancher_host = state.get("rancher_host", DEFAULT_RANCHER_HOST)
-    portainer_host = state.get("portainer_host", DEFAULT_PORTAINER_HOST)
+    rancher_host = require_hostname(
+        state.get("rancher_host") or DEFAULT_RANCHER_HOST,
+        "RANCHER_HOSTNAME",
+        "a rancher_host value in the user's state file",
+    )
+    portainer_host = require_hostname(
+        state.get("portainer_host") or DEFAULT_PORTAINER_HOST,
+        "PORTAINER_HOSTNAME",
+        "a portainer_host value in the user's state file",
+    )
     cluster_id = state.get("cluster_id") or os.environ.get("RANCHER_CLUSTER_ID")
     agent_port = state.get("agent_port", "?")
 

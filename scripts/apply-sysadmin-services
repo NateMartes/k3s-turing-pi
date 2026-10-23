@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+HOSTNAME_VARIABLES = (
+    "RANCHER_HOSTNAME",
+    "PORTAINER_HOSTNAME",
+)
+
+
+def die(message: str) -> None:
+    print(f"ERROR: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def configured_hostnames() -> dict[str, str]:
+    hostnames = {}
+    for variable in HOSTNAME_VARIABLES:
+        value = os.environ.get(variable, "").strip()
+        if not value:
+            die(f"{variable} is not set. Source sysadmin-env before applying services.")
+        if "://" in value or "/" in value or any(char.isspace() for char in value):
+            die(f"{variable} must be a hostname without a scheme, path, or whitespace.")
+        hostnames[variable] = value
+    return hostnames
+
+
+def run() -> None:
+    hostnames = configured_hostnames()
+    repository = Path(__file__).resolve().parent.parent
+    services = repository / "sysadmin-services"
+
+    try:
+        result = subprocess.run(
+            ["kubectl", "kustomize", str(services)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        die("kubectl was not found in PATH.")
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "unknown error").strip()
+        die(f"Could not render sysadmin services: {detail}")
+
+    rendered = result.stdout
+    for variable, hostname in hostnames.items():
+        placeholder = "${" + variable + "}"
+        if placeholder not in rendered:
+            die(f"The rendered manifests do not contain {placeholder}.")
+        rendered = rendered.replace(placeholder, hostname)
+
+    try:
+        subprocess.run(
+            ["kubectl", "apply", "-f", "-"],
+            check=True,
+            input=rendered,
+            text=True,
+        )
+    except FileNotFoundError:
+        die("kubectl was not found in PATH.")
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(exc.returncode) from exc
+
+
+if __name__ == "__main__":
+    run()

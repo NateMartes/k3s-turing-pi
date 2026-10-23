@@ -11,3 +11,11 @@ Administrative credentials should use:
 - `RANCHER_TOKEN`
 - `RANCHER_CLUSTER_ID`
 - `PORTAINER_API_KEY`
+
+Service hostnames must be configured with:
+
+- `RANCHER_HOSTNAME`
+- `PORTAINER_HOSTNAME`
+
+If a variable is not set, the relevant command exits with an error unless an
+explicit `-H`/`--hostname` argument is provided.

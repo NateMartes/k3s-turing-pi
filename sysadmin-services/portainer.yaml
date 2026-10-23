@@ -34,12 +34,12 @@ spec:
       enabled: true
       ingressClassName: traefik
       tls:
-          # This should match the IP of the node this runs on
+          # Rendered by scripts/apply-sysadmin-services from sysadmin-env.
         - hosts:
-           - portainer.10.42.0.31.sslip.io
+           - ${PORTAINER_HOSTNAME}
       hosts:
-          # This should match the IP of the node this runs on
-        - host: portainer.10.42.0.31.sslip.io
+          # Rendered by scripts/apply-sysadmin-services from sysadmin-env.
+        - host: ${PORTAINER_HOSTNAME}
           paths:
             - path: "/"
 

@@ -163,7 +163,7 @@ Runs a Portainer Agent against the user's rootless Docker socket.
 ```bash
 sudo -E ./plumbing-scripts/install-portainer-agent \
   -u bob \
-  -H portainer.192.168.1.102.sslip.io \
+  -H portainer.10.42.0.31.sslip.io \
   --port 9002
 ```
 
@@ -208,7 +208,7 @@ sudo -E ./plumbing-scripts/install-rancher-account \
 The default Rancher host is:
 
 ```text
-rancher.192.168.1.102
+rancher.10.42.0.31.sslip.io
 ```
 
 ### `uninstall-rancher-account`
@@ -318,13 +318,20 @@ sensitive administrator credentials directly in shell history.
 ```bash
 export RANCHER_TOKEN='token-xxxxx:yyyyyyyy'
 export RANCHER_CLUSTER_ID='local'
+export RANCHER_HOSTNAME='rancher.10.42.0.31.sslip.io'
 ```
 
 ### Portainer
 
 ```bash
 export PORTAINER_API_KEY='ptr_xxxxxxxxx'
+export PORTAINER_HOSTNAME='portainer.10.42.0.31.sslip.io'
 ```
+
+The hostname variables are required by both the main user commands and the
+plumbing scripts. Explicit hostname command-line options still take precedence;
+commands that have neither a configured variable nor an explicit/stored
+hostname exit with an error.
 
 Then preserve those environment variables through `sudo`:
 

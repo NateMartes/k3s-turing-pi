@@ -7,7 +7,7 @@ from pathlib import Path
 from user_common import (
     DEFAULT_PORTAINER_HOST, DEFAULT_RANCHER_HOST, agent_address, choose_agent_port,
     die, generate_password, print_resource_summary, require_root, run, run_plumbing,
-    save_state, set_quota, state_path, user_exists, validate_username,
+    save_state, set_quota, state_path, user_exists, validate_username, require_hostname,
     DEFAULT_PORTAINER_API_KEY, DEFAULT_RANCHER_API_KEY,
 )
 
@@ -27,6 +27,12 @@ def main():
     args = p.parse_args()
 
     require_root()
+    args.rancher_host = require_hostname(
+        args.rancher_host, "RANCHER_HOSTNAME", "--rancher-host"
+    )
+    args.portainer_host = require_hostname(
+        args.portainer_host, "PORTAINER_HOSTNAME", "--portainer-host"
+    )
     username = validate_username(args.username)
     if user_exists(username):
         die(f"Linux user {username!r} already exists.")

@@ -71,15 +71,15 @@ Currently this setup supports:
 7. Deploy sysadmin services to K3s:
 
    ```bash
-   sudo -E kubectl apply -k sysadmin-services
+   source ./sysadmin-env
+   sudo -E ./scripts/apply-sysadmin-services
    ```
 
    At this point, the sysadmin services will be running on the K3s server node,
    which you have defined in `ansible/inventory.yml`.
 
-   If you want to find the specific defined domain names to reach the services,
-   check out `sysadmin-services/portainer.yml` and `sysadmin-services/rancher.yml`,
-   for instance.
+   The Rancher and Portainer domain names come from `RANCHER_HOSTNAME` and
+   `PORTAINER_HOSTNAME` in `sysadmin-env`.
 
 8. Trust the certificates from the sysadmin K3s services if you are using self-signed certificates:
 
@@ -107,14 +107,15 @@ That's it! Now you have K3s running some neat services!
 2. Get a Rancher API token from the current Rancher instance.
 
    From the UI, log in, and then go to your account and create an API key.
-   Store this key in `$HOME/.env` as the `RANCHER_TOKEN`.
-   Remember to `source $HOME/.env`.
+   Set the key as `RANCHER_TOKEN` in `sysadmin-env`. The file also specifies
+   `RANCHER_HOSTNAME` for the Rancher instance used by the scripts.
 
 3. Get a Portainer API token from the current Portainer instance.
 
    From the UI, log in, and then go to your account and create an API key.
-   Store this key in `$HOME/.env` as the `PORTAINER_API_KEY`.
-   Remember to `source $HOME/.env`.
+   Set the key as `PORTAINER_API_KEY` in `sysadmin-env`. The file also specifies
+   `PORTAINER_HOSTNAME` for the Portainer instance used by the scripts. Then run
+   `source sysadmin-env` before the user-management commands.
 
 4. Enable quotas for users:
 

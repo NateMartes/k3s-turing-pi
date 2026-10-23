@@ -35,33 +35,25 @@ Chart and application versions are pinned.
 
 ## Before applying
 
-Edit `rancher.yaml`:
+Set both service hostnames in `sysadmin-env`:
 
-```yaml
-hostname: rancher.local
+```bash
+export RANCHER_HOSTNAME="rancher.10.42.0.31.sslip.io"
+export PORTAINER_HOSTNAME="portainer.10.42.0.31.sslip.io"
 ```
 
-and replace it with a hostname that resolves to a K3s node.
-
-Example:
-
-```yaml
-hostname: rancher.10.42.0.31.sslip.io
-```
-
-Edit `portainer.yaml`:
-
-```yaml
-host: portainer.10.42.0.31.sslip.io
-```
-
-and replace it with a hostname that resolves to a K3s node.
+Each hostname must resolve to a K3s node. The committed manifests contain
+environment-variable placeholders, which the apply script replaces in memory.
 
 ## Apply
 
 ```bash
-sudo -E kubectl apply -k ./sysadmin-services
+source ./sysadmin-env
+sudo -E ./scripts/apply-sysadmin-services
 ```
+
+Use the apply script instead of `kubectl apply -k`; Kubernetes does not expand
+shell environment variables in YAML manifests.
 
 ## Check
 
@@ -77,11 +69,11 @@ sudo -E k3s kubectl get helmcharts -n kube-system
 Portainer:
 
 ```text
-https://<hostname configured in portainer.yaml>
+https://<PORTAINER_HOSTNAME>
 ```
 
 Rancher:
 
 ```text
-https://<hostname configured in rancher.yaml>
+https://<RANCHER_HOSTNAME>
 ```
