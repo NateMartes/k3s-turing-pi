@@ -1,0 +1,2 @@
+export PORTAINER_API_KEY="changeme"
+export RANCHER_TOKEN="changeme"

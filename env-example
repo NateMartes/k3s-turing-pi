@@ -1,4 +1,0 @@
-# COPY ME TO A .env!!!!
-
-export PORTAINER_API_KEY="changeme"
-export RANCHER_TOKEN="changeme"

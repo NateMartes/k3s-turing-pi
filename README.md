@@ -21,23 +21,8 @@ Currently this setup supports:
 
 ## Getting Started
 
-0. Pull this down, and store it in `$HOME`
+0. Pull this down
 
-   **Note**: The commands are taking from the POV of `$HOME`, so if you planning something
-   different, please double check commands (not saying you would NOT double check them already...)
-
-   This copies this repo into your `$HOME`, but also **overwrites any match file names**, so
-   be careful...
-   ```bash
-    curl -fsSL https://github.com/NateMartes/k3s-turing-pi/archive/HEAD.tar.gz \
-      | tar -xz \
-          --strip-components=1 \
-          --exclude='*/ansible/inventory.yml' \
-          # Add more --exclude=... here! \
-          -C "$HOME"
-   ```
-
-   you could also...
    ```bash
    git clone https://github.com/NateMartes/k3s-turing-pi.git
    ```
@@ -61,13 +46,13 @@ Currently this setup supports:
 4. Install common packages using Ansible:
 
    ```bash
-   cd $HOME/ansible && ansible-playbook -i inventory.yml setup-common-packages.yml
+   cd ansible && ansible-playbook -i inventory.yml setup-common-packages.yml
    ```
 
 5. Install desktop packages to GUI nodes (will be only 1 node):
 
    ```bash
-   cd $HOME/ansible && ansible-playbook -i inventory.yml -l <my-GUI-node-hostname> setup-desktop-packages.yml
+   cd ansible && ansible-playbook -i inventory.yml -l <my-GUI-node-hostname> setup-desktop-packages.yml
    ```
 
    - Chromium is reinstalled with Snap since system-wide certificate trusting only
@@ -76,7 +61,7 @@ Currently this setup supports:
 6. Set up K3s:
 
    ```bash
-   cd $HOME/ansible && ansible-playbook -i inventory.yml setup-k3s.yml
+   cd ansible && ansible-playbook -i inventory.yml setup-k3s.yml
    ```
 
    The default K3s Pod network is `10.244.0.0/16`, deliberately separate from
@@ -86,7 +71,7 @@ Currently this setup supports:
 7. Deploy sysadmin services to K3s:
 
    ```bash
-   cd $HOME && sudo -E kubectl apply -k sysadmin-services
+   sudo -E kubectl apply -k sysadmin-services
    ```
 
    At this point, the sysadmin services will be running on the K3s server node,
@@ -134,26 +119,26 @@ That's it! Now you have K3s running some neat services!
 4. Enable quotas for users:
 
    ```bash
-   cd $HOME && sudo ./scripts/enable-quotas /home
+   sudo ./scripts/enable-quotas /home
    ```
 
 5. Run the create-user script:
 
    ```bash
-   cd $HOME && sudo -E ./scripts/create-user -u <new-user>
+   sudo -E ./scripts/create-user -u <new-user>
    ```
 
 This will make accounts on the services above, automatically.
 In the event of failures, you can revert the changes:
 
 ```bash
-cd $HOME && sudo -E ./scripts/remove-user -u <new-user>
+sudo -E ./scripts/remove-user -u <new-user>
 ```
 
 ### Updating User Passwords
 
 ```bash
-cd $HOME && sudo -E ./scripts/change-user-password -u <new-user>
+sudo -E ./scripts/change-user-password -u <new-user>
 ```
 
 This will update the passwords in K3s services too!
@@ -164,5 +149,5 @@ not allow a password to be updated.
 ### Removing Users
 
 ```bash
-cd $HOME && sudo -E ./scripts/remove-user -u <new-user>
+sudo -E ./scripts/remove-user -u <new-user>
 ```
