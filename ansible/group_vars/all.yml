@@ -11,5 +11,6 @@ k3s_flannel_iface: ""
 # Interface names are discovered automatically. Set either override in the
 # inventory only when routing does not make the intended interface clear.
 default_gateway_lan_cidr: "{{ k3s_lan_cidr }}"
-default_gateway_lan_interface: ""
-default_gateway_wan_interface: ""
+default_gateway_lan_interface: "enp6s0f0"
+default_gateway_wan_interface: "enp6s0f1"
+

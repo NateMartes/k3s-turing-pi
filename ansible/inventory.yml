@@ -6,8 +6,8 @@ all:
   children:
     controller:
       hosts:
-        vision:
-          ansible_host: 10.42.0.6
+        gostop:
+          ansible_host: 10.42.0.1
           k3s_host: true
           is_default_gateway: true
           is_sysadmin_service_node: true
@@ -17,16 +17,28 @@ all:
       hosts:
         1wol-hakgwang:
           ansible_host: 10.42.0.10
-          is_desktop_node: true
         1wol-hongdan:
           ansible_host: 10.42.0.11
+          is_desktop_node: true
         1wol-sonamu:
           ansible_host: 10.42.0.12
 
     samwol:
       hosts:
+        3wol-makgwang:
+          ansible_host: 10.42.0.30
         3wol-hongdan:
           ansible_host: 10.42.0.31
           is_desktop_node: true
         3wol-beotkkot:
           ansible_host: 10.42.0.32
+
+    sipilwol:
+      hosts:
+        11wol-bigwang:
+          ansible_host: 10.42.0.110
+        11wol-chodan:
+          ansible_host: 10.42.0.111
+          is_desktop_node: true
+        11wol-pungnyu:
+          ansible_host: 10.42.0.112
