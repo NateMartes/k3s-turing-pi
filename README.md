@@ -82,7 +82,18 @@ Currently this setup supports:
    See the inventory variable table in `ansible/README.md` for the supported
    global and per-host settings.
 
-4. Distribute every inventory node's name to `/etc/hosts` on every node.
+4. Configure the controller as the LAN's default gateway:
+
+   ```bash
+   cd ansible && ansible-playbook -i inventory.yml setup-default-gateway.yml
+   ```
+
+   Exactly one Ubuntu node must have `is_default_gateway: true`.
+    This node must already have upstream Internet
+   access. The remaining nodes can use its `ansible_host` address as their IPv4
+   default gateway once the playbook finishes.
+
+5. Distribute every inventory node's name to `/etc/hosts` on every node.
    This is optional, but nice to have!
 
    ```bash
@@ -92,13 +103,13 @@ Currently this setup supports:
    This makes each node reachable by its inventory name (for example,
    `my-very-cool-box`).
 
-5. Install common packages using Ansible:
+6. Install common packages using Ansible:
 
    ```bash
    cd ansible && ansible-playbook -i inventory.yml setup-common-packages.yml
    ```
 
-6. Install desktop packages on GUI nodes:
+7. Install desktop packages on GUI nodes:
 
    ```bash
    cd ansible && ansible-playbook -i inventory.yml setup-desktop-packages.yml
@@ -110,16 +121,6 @@ Currently this setup supports:
    **NOTE**: Only nodes with `is_desktop_node: true` in
    `ansible/inventory.yml` are changed. Nodes where the variable is false or
    missing are skipped.
-
-7. Configure the controller as the LAN's default gateway:
-
-   ```bash
-   cd ansible && ansible-playbook -i inventory.yml setup-default-gateway.yml
-   ```
-
-   Exactly one Ubuntu node must have `is_default_gateway: true`. The inventory
-   marks the `vision` controller. Configure LAN clients (or DHCP on the switch)
-   to use that node's `ansible_host` address as their IPv4 default gateway.
 
 8. Set up K3s:
 

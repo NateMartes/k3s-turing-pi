@@ -1,10 +1,13 @@
 # Ansible Playbooks
 
-Before running anything, make sure every node:
+Before running the playbooks, make sure every node:
 
 1. Has the `sysadmin` user, and it has sudo access.
-2. Has access to the internet.
-3. Can be accessed by SSH via this node (`ssh-keygen && ssh-copy-id <node-ip>`).
+2. Can be accessed by SSH via this node (`ssh-keygen && ssh-copy-id <node-ip>`).
+
+The node marked `is_default_gateway: true` must also have upstream Internet
+access. Run `setup-default-gateway.yml` first; the remaining nodes can use that
+gateway for Internet access during subsequent playbooks.
 
 # Playbooks
 
