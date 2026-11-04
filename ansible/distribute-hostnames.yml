@@ -1,0 +1,22 @@
+---
+- name: Distribute cluster host names
+  hosts: all
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Require an address for every inventory node
+      ansible.builtin.assert:
+        that:
+          - hostvars[item].ansible_host is defined
+          - hostvars[item].ansible_host | string | length > 0
+        fail_msg: "Set ansible_host for {{ item }} in inventory.yml."
+      loop: "{{ groups['all'] }}"
+      run_once: true
+
+  tasks:
+    - name: Add inventory nodes to /etc/hosts
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} ANSIBLE MANAGED CLUSTER HOSTS"
+        block: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../etc/hosts.j2') }}"

@@ -1,79 +1,152 @@
-# sysadmin-system
+# Sysadmin Services
 
-Kustomize bundle for system-admin services running on the K3s cluster.
+This Kustomize bundle deploys Rancher, Harbor, Portainer, and cert-manager to
+the K3s cluster. Run the commands below from the repository root.
 
-## Namespace layout
+## Getting Started
 
-`sysadmin-system` is the namespace for admin services that safely support a
-custom namespace.
+### 1. Check the prerequisites
 
-- Portainer: `sysadmin-system`
-- Rancher: `cattle-system`
-- cert-manager: `cert-manager`
+Before deploying, ensure that:
 
-Rancher is intentionally left in `cattle-system`. Rancher has components that
-assume this namespace, so moving it to `sysadmin-system` is not a safe
-deployment choice. cert-manager is intentionally left in
-its conventional `cert-manager` namespace because it is a singleton
-cluster-level dependency with CRDs, webhooks, and cluster-scoped RBAC.
+- K3s is running and `kubectl` can reach the cluster.
+- Every service hostname resolves to an address served by the cluster's
+  Traefik ingress.
+- An AMD64 K3s node is marked `is_sysadmin_service_node: true` in
+  `ansible/inventory.yml`. The K3s setup playbook gives it the
+  `sysadmin-services=true` label used by Harbor and Portainer.
 
-All three HelmChart resources are labeled:
+The pinned stable Harbor release is scheduled to AMD64 because its complete
+set of component images is not multi-architecture. The registry can still
+store images for ARM64, AMD64, and other platforms.
 
-```yaml
-app.kubernetes.io/part-of: sysadmin-system
-```
+### 2. Configure hostnames and initial credentials
 
-so the manifests remain logically grouped as one system bundle.
-
-## Versions
-
-- Rancher: 2.15.0
-- Portainer CE: 245.2.0
-- cert-manager: v1.21.2
-
-Chart and application versions are pinned.
-
-## Before applying
-
-Set both service hostnames in `sysadmin-env`:
+Update `sysadmin-env` with the values for this cluster:
 
 ```bash
 export RANCHER_HOSTNAME="rancher.10.42.0.31.sslip.io"
+export RANCHER_BOOTSTRAP_PASSWORD='replace-with-a-strong-password'
+export HARBOR_HOSTNAME="harbor.10.42.0.31.sslip.io"
+export HARBOR_ADMIN_PASSWORD='replace-with-a-strong-password'
 export PORTAINER_HOSTNAME="portainer.10.42.0.31.sslip.io"
 ```
 
-Each hostname must resolve to a K3s node. The committed manifests contain
-environment-variable placeholders, which the apply script replaces in memory.
+`HARBOR_ADMIN_PASSWORD` is the initial password for Harbor's built-in `admin`
+account. `RANCHER_BOOTSTRAP_PASSWORD` is Rancher's first-login password. Change
+both passwords in their respective interfaces after initial setup; changing
+these environment variables later does not reset an existing installation.
 
-## Apply
+Portainer prompts for its initial administrator account when first opened.
+Afterward, create a Portainer API key and store it as `PORTAINER_API_KEY` in
+`sysadmin-env` for the repository's user-management scripts.
+
+### 3. Deploy the services
+
+Load the environment and run the apply script:
 
 ```bash
 source ./sysadmin-env
 sudo -E ./scripts/apply-sysadmin-services
 ```
 
-Use the apply script instead of `kubectl apply -k`; Kubernetes does not expand
-shell environment variables in YAML manifests.
+Use this script instead of `kubectl apply -k`. Kubernetes does not expand the
+environment-variable placeholders in the committed manifests, so the script
+validates, renders, and replaces them in memory before applying the resources.
 
-## Check
+### 4. Check the deployment
+
+Inspect the Helm installations and Pods:
 
 ```bash
+sudo -E k3s kubectl get helmcharts -n kube-system
 sudo -E k3s kubectl get pods -n sysadmin-system
 sudo -E k3s kubectl get pods -n cattle-system
 sudo -E k3s kubectl get pods -n cert-manager
-sudo -E k3s kubectl get helmcharts -n kube-system
 ```
 
-## Access
+Harbor consists of several Pods and can take longer than Portainer to become
+ready. If a Harbor Pod remains pending, verify that the selected sysadmin node
+has both the `sysadmin-services=true` and `kubernetes.io/arch=amd64` labels.
 
-Portainer:
+### 5. Trust the private ingress certificates locally
 
-```text
-https://<PORTAINER_HOSTNAME>
+After all three ingresses are available, discover their private certificate
+authorities and install them on the Ansible control machine:
+
+```bash
+sudo ./scripts/trust-k3s-crets
 ```
 
-Rancher:
+Harbor's official chart generates its ingress certificate automatically. The
+trust script discovers that certificate through the Ingress and its TLS Secret.
 
-```text
-https://<RANCHER_HOSTNAME>
+### 6. Trust the private CAs on every K3s node
+
+Distribute the discovered CAs to every K3s server and agent, then restart their
+K3s services so containerd reloads the system trust store:
+
+```bash
+cd ansible
+ansible-playbook -i inventory.yml trust-k3s-certs.yml
+cd ..
 ```
+
+Every node must be able to resolve `HARBOR_HOSTNAME` to the cluster's Traefik
+ingress before it can pull images from the registry.
+
+### 7. Open the services
+
+- Harbor: `https://<HARBOR_HOSTNAME>`
+- Portainer: `https://<PORTAINER_HOSTNAME>`
+- Rancher: `https://<RANCHER_HOSTNAME>`
+
+For Harbor's initial setup, log in as `admin` with
+`HARBOR_ADMIN_PASSWORD`. For Rancher, log in as `admin` with
+`RANCHER_BOOTSTRAP_PASSWORD`. Portainer guides you through creation of its
+initial administrator account.
+
+### 8. Log a container client into Harbor
+
+After installing the private CA, authenticate a Docker-compatible client with:
+
+```bash
+printf '%s' "${HARBOR_ADMIN_PASSWORD}" | docker login "${HARBOR_HOSTNAME}" \
+  --username admin \
+  --password-stdin
+```
+
+Create a Harbor project before pushing images. Kubernetes workloads should use
+a namespace-scoped `imagePullSecret` instead of embedding administrator
+credentials in Pod specifications.
+
+## Deployment Reference
+
+### Namespace layout
+
+- Harbor: `sysadmin-system`
+- Portainer: `sysadmin-system`
+- Rancher: `cattle-system`
+- cert-manager: `cert-manager`
+
+Rancher remains in `cattle-system` because some Rancher components assume that
+namespace. cert-manager remains in its conventional `cert-manager` namespace
+because it is a singleton cluster dependency with CRDs, webhooks, and
+cluster-scoped RBAC.
+
+All four `HelmChart` resources use this label so they remain logically grouped:
+
+```yaml
+app.kubernetes.io/part-of: sysadmin-system
+```
+
+### Pinned versions
+
+- Harbor: 2.15.4 (chart 1.19.4)
+- Portainer CE: 2.45.2 (chart 245.2.0)
+- Rancher: 2.15.0 (chart 2.15.1)
+- cert-manager: v1.21.2
+
+Harbor and Portainer use persistent `local-path` volumes. Their data remains on
+the selected sysadmin-service node, so back up the corresponding PVC data
+before replacing or reprovisioning that node.

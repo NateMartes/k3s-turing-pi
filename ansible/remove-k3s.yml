@@ -11,6 +11,39 @@
       ansible.builtin.group_by:
         key: "k3s_{{ 'server' if (k3s_host | default(false) | bool) else 'agent' }}"
 
+    - name: Add selected node to the sysadmin service group
+      ansible.builtin.group_by:
+        key: k3s_sysadmin_service
+      when: is_sysadmin_service_node | default(false) | bool
+
+- name: Remove sysadmin service node labels
+  hosts: k3s_server
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check for the K3s executable
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_executable
+
+    - name: Remove the sysadmin service label from selected nodes
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/k3s
+          - kubectl
+          - label
+          - node
+          - "{{ item }}"
+          - sysadmin-services-
+      loop: "{{ groups.get('k3s_sysadmin_service', []) }}"
+      register: removed_sysadmin_service_labels
+      changed_when: >-
+        removed_sysadmin_service_labels.rc == 0 and
+        'not labeled' not in removed_sysadmin_service_labels.stdout
+      failed_when: false
+      when: k3s_executable.stat.exists
+
 - name: Remove K3s agents
   hosts: k3s_agent
   become: true

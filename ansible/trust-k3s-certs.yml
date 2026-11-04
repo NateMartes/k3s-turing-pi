@@ -1,0 +1,54 @@
+---
+- name: Trust K3s ingress certificate authorities on every node
+  hosts: all
+  become: true
+
+  vars:
+    local_k3s_ca_directory: /usr/local/share/ca-certificates/k3s
+    remote_k3s_ca_directory: /usr/local/share/ca-certificates/k3s
+
+  tasks:
+    - name: Find locally discovered K3s certificate authorities
+      ansible.builtin.set_fact:
+        local_k3s_ca_files: >-
+          {{ lookup('ansible.builtin.fileglob', local_k3s_ca_directory ~ '/*.crt', wantlist=True) }}
+
+    - name: Require at least one discovered certificate authority
+      ansible.builtin.assert:
+        that:
+          - local_k3s_ca_files | length > 0
+        fail_msg: >-
+          No certificates were found in {{ local_k3s_ca_directory }} on the
+          Ansible control machine. Run scripts/trust-k3s-crets first.
+      run_once: true
+
+    - name: Create the managed certificate directory
+      ansible.builtin.file:
+        path: "{{ remote_k3s_ca_directory }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install discovered certificate authorities
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ remote_k3s_ca_directory }}/{{ item | basename }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ local_k3s_ca_files }}"
+      notify:
+        - Update system certificate trust
+        - Restart K3s runtime
+
+  handlers:
+    - name: Update system certificate trust
+      ansible.builtin.command:
+        cmd: update-ca-certificates
+      changed_when: true
+
+    - name: Restart K3s runtime
+      ansible.builtin.systemd:
+        name: "{{ 'k3s' if (k3s_host | default(false) | bool) else 'k3s-agent' }}"
+        state: restarted

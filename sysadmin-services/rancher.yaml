@@ -18,6 +18,7 @@ spec:
 
     # Rendered by scripts/apply-sysadmin-services from sysadmin-env.
     hostname: ${RANCHER_HOSTNAME}
+    bootstrapPassword: ${RANCHER_BOOTSTRAP_PASSWORD_JSON}
 
     image:
       repository: rancher/rancher

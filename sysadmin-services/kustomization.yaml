@@ -5,4 +5,5 @@ resources:
   - namespace.yaml
   - cert-manager.yaml
   - rancher.yaml
+  - harbor.yaml
   - portainer.yaml

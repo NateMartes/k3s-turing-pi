@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
+import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -9,7 +12,16 @@ from pathlib import Path
 
 HOSTNAME_VARIABLES = (
     "RANCHER_HOSTNAME",
+    "HARBOR_HOSTNAME",
     "PORTAINER_HOSTNAME",
+)
+
+JSON_SECRET_VARIABLES = (
+    "RANCHER_BOOTSTRAP_PASSWORD",
+)
+
+BASE64_SECRET_VARIABLES = (
+    "HARBOR_ADMIN_PASSWORD",
 )
 
 
@@ -18,20 +30,49 @@ def die(message: str) -> None:
     raise SystemExit(1)
 
 
-def configured_hostnames() -> dict[str, str]:
-    hostnames = {}
+def validate_hostname(variable: str, value: str) -> None:
+    labels = value.split(".")
+    valid_label = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
+    if len(value) > 253 or not labels or any(
+        not valid_label.fullmatch(label) for label in labels
+    ):
+        die(f"{variable} must be a valid DNS hostname without a scheme or path.")
+
+
+def configured_values() -> dict[str, str]:
+    values = {}
     for variable in HOSTNAME_VARIABLES:
         value = os.environ.get(variable, "").strip()
         if not value:
             die(f"{variable} is not set. Source sysadmin-env before applying services.")
-        if "://" in value or "/" in value or any(char.isspace() for char in value):
-            die(f"{variable} must be a hostname without a scheme, path, or whitespace.")
-        hostnames[variable] = value
-    return hostnames
+        validate_hostname(variable, value)
+        values[variable] = value
+
+    for variable in JSON_SECRET_VARIABLES:
+        value = os.environ.get(variable, "")
+        if not value:
+            die(f"{variable} is not set. Source sysadmin-env before applying services.")
+        if "\n" in value or "\r" in value:
+            die(f"{variable} must not contain a newline.")
+        # JSON strings are also valid YAML scalars and safely preserve special
+        # characters when substituted into a Helm values document.
+        values[f"{variable}_JSON"] = json.dumps(value)
+
+    for variable in BASE64_SECRET_VARIABLES:
+        value = os.environ.get(variable, "")
+        if not value:
+            die(f"{variable} is not set. Source sysadmin-env before applying services.")
+        if "\n" in value or "\r" in value:
+            die(f"{variable} must not contain a newline.")
+        values[f"{variable}_B64"] = base64.b64encode(
+            value.encode("utf-8")
+        ).decode("ascii")
+
+    return values
 
 
 def run() -> None:
-    hostnames = configured_hostnames()
+    values = configured_values()
     repository = Path(__file__).resolve().parent.parent
     services = repository / "sysadmin-services"
 
@@ -49,11 +90,15 @@ def run() -> None:
         die(f"Could not render sysadmin services: {detail}")
 
     rendered = result.stdout
-    for variable, hostname in hostnames.items():
+    for variable, value in values.items():
         placeholder = "${" + variable + "}"
         if placeholder not in rendered:
             die(f"The rendered manifests do not contain {placeholder}.")
-        rendered = rendered.replace(placeholder, hostname)
+        rendered = rendered.replace(placeholder, value)
+
+    unresolved = "${" in rendered
+    if unresolved:
+        die("The rendered manifests contain an unresolved environment placeholder.")
 
     try:
         subprocess.run(

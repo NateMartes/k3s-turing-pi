@@ -1,4 +1,7 @@
 export PORTAINER_API_KEY="changeme"
-export PORTAINER_HOSTNAME="changeme"
+export PORTAINER_HOSTNAME="portainer.10.42.0.31.sslip.io"
+export HARBOR_ADMIN_PASSWORD='changeme'
+export HARBOR_HOSTNAME="harbor.10.42.0.31.sslip.io"
+export RANCHER_BOOTSTRAP_PASSWORD='changeme'
 export RANCHER_TOKEN="changeme"
-export RANCHER_HOSTNAME="changeme"
+export RANCHER_HOSTNAME="rancher.10.42.0.31.sslip.io"

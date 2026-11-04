@@ -2,15 +2,19 @@
 - name: Setup desktop packages
   hosts: all
   become: true
+  gather_facts: false
 
   tasks:
-    - name: Purge Chromium installed through apt
-      ansible.builtin.apt:
-        name: chromium-browser
-        state: absent
-        purge: true
+    - name: Configure desktop packages
+      when: is_desktop_node | default(false) | bool
+      block:
+        - name: Purge Chromium installed through apt
+          ansible.builtin.apt:
+            name: chromium-browser
+            state: absent
+            purge: true
 
-    - name: Install Chromium through Snap
-      community.general.snap:
-        name: chromium
-        state: present
+        - name: Install Chromium through Snap
+          community.general.snap:
+            name: chromium
+            state: present

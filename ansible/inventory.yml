@@ -3,11 +3,30 @@ all:
     ansible_user: sysadmin
     k3s_version: "v1.36.1+k3s1"
 
-  hosts:
-    node1:
-      ansible_host: 192.168.1.102
-      k3s_host: true
+  children:
+    controller:
+      hosts:
+        vision:
+          ansible_host: 10.42.0.6
+          k3s_host: true
+          is_default_gateway: true
+          is_sysadmin_service_node: true
+          is_desktop_node: true
 
-    node2:
-      ansible_host: 192.168.1.103
-      k3s_host: false
+    ilwol:
+      hosts:
+        1wol-hakgwang:
+          ansible_host: 10.42.0.10
+          is_desktop_node: true
+        1wol-hongdan:
+          ansible_host: 10.42.0.11
+        1wol-sonamu:
+          ansible_host: 10.42.0.12
+
+    samwol:
+      hosts:
+        3wol-hongdan:
+          ansible_host: 10.42.0.31
+          is_desktop_node: true
+        3wol-beotkkot:
+          ansible_host: 10.42.0.32

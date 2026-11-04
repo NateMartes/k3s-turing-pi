@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: harbor-admin-password
+  namespace: sysadmin-system
+  labels:
+    app.kubernetes.io/part-of: sysadmin-system
+type: Opaque
+data:
+  # Rendered by scripts/apply-sysadmin-services from sysadmin-env.
+  HARBOR_ADMIN_PASSWORD: ${HARBOR_ADMIN_PASSWORD_B64}
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: harbor
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/part-of: sysadmin-system
+spec:
+  chart: harbor
+  repo: https://helm.goharbor.io
+  version: 1.19.4
+  targetNamespace: sysadmin-system
+  createNamespace: false
+  timeout: 20m
+  backOffLimit: 20
+  valuesContent: |-
+    expose:
+      type: ingress
+      tls:
+        enabled: true
+        certSource: auto
+      ingress:
+        hosts:
+          # Rendered by scripts/apply-sysadmin-services from sysadmin-env.
+          core: ${HARBOR_HOSTNAME}
+        className: traefik
+        annotations:
+          ingress.kubernetes.io/ssl-redirect: "true"
+          ingress.kubernetes.io/proxy-body-size: "0"
+          traefik.ingress.kubernetes.io/router.tls: "true"
+
+    # Rendered by scripts/apply-sysadmin-services from sysadmin-env.
+    externalURL: https://${HARBOR_HOSTNAME}
+
+    existingSecretAdminPassword: harbor-admin-password
+    existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
+
+    persistence:
+      enabled: true
+      resourcePolicy: keep
+      persistentVolumeClaim:
+        registry:
+          storageClass: local-path
+          accessMode: ReadWriteOnce
+          size: 20Gi
+        jobservice:
+          jobLog:
+            storageClass: local-path
+            accessMode: ReadWriteOnce
+            size: 1Gi
+        database:
+          storageClass: local-path
+          accessMode: ReadWriteOnce
+          size: 1Gi
+        redis:
+          storageClass: local-path
+          accessMode: ReadWriteOnce
+          size: 1Gi
+        trivy:
+          storageClass: local-path
+          accessMode: ReadWriteOnce
+          size: 5Gi
+
+    # local-path volumes are ReadWriteOnce, so persistent workloads must stop
+    # before their replacements start.
+    updateStrategy:
+      type: Recreate
+
+    # Harbor 2.15 is scheduled only to the selected AMD64 sysadmin node.
+    portal:
+      nodeSelector: &harborNodeSelector
+        sysadmin-services: "true"
+        kubernetes.io/arch: amd64
+    core:
+      nodeSelector: *harborNodeSelector
+    jobservice:
+      nodeSelector: *harborNodeSelector
+    registry:
+      nodeSelector: *harborNodeSelector
+    trivy:
+      nodeSelector: *harborNodeSelector
+    database:
+      internal:
+        nodeSelector: *harborNodeSelector
+    redis:
+      internal:
+        nodeSelector: *harborNodeSelector
+    exporter:
+      nodeSelector: *harborNodeSelector

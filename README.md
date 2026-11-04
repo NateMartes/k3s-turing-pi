@@ -7,6 +7,7 @@ Currently this setup supports:
 - Ansible provisioning of K3s and more.
 - K3s deployment on Turing Pi nodes.
 - Rancher deployment into K3s.
+- Harbor registry deployment into K3s.
 - Portainer deployment into K3s.
 - User management and automated account creation for:
   - Linux
@@ -16,16 +17,52 @@ Currently this setup supports:
 ## Directories
 
 - `ansible`: Automated playbooks to install and set up software.
+- `etc`: Templates for files distributed to each node's `/etc` directory.
 - `scripts`: Programs to set up software for users and system-wide use.
 - `sysadmin-services`: Services running on this cluster, deployed via Kubernetes.
 
 ## Getting Started
 
-0. Pull this down
+0. Download the repository.
+
+   Using Git:
 
    ```bash
    git clone https://github.com/NateMartes/k3s-turing-pi.git
+   cd k3s-turing-pi
    ```
+
+   Alternatively, download the `master` branch as a tarball and extract it
+   directly into a `k3s-turing-pi` directory:
+
+   ```bash
+   curl --fail --location \
+     https://github.com/NateMartes/k3s-turing-pi/archive/refs/heads/master.tar.gz \
+     --output k3s-turing-pi.tar.gz
+   mkdir -p k3s-turing-pi
+   tar --extract --gzip \
+     --file k3s-turing-pi.tar.gz \
+     --directory k3s-turing-pi \
+     --strip-components=1
+   cd k3s-turing-pi
+   ```
+
+  **NOTE**: You probably want to keep some of your files around if you ever pull
+  an updated version of this repo (like `inventory.yml`)
+
+   ```bash
+   tar --extract --gzip \
+     --file k3s-turing-pi.tar.gz \
+     --directory k3s-turing-pi \
+     --exclude='*/ansible' \
+     --exclude='*/env-example' \
+     --strip-components=1
+   ```
+
+   The `*/` prefix matches the top-level directory included in GitHub's source
+   archive. Add, remove, or change the exclusion patterns for the paths you do
+   not want to extract. This repository does not currently contain an
+   `env-example` file; it is shown only as an example pattern.
 
 1. Make sure this account has SSH access to all nodes in your cluster:
 
@@ -42,23 +79,49 @@ Currently this setup supports:
    ```
 
 3. Ensure your node inventory (`ansible/inventory.yml`) points to every node.
+   See the inventory variable table in `ansible/README.md` for the supported
+   global and per-host settings.
 
-4. Install common packages using Ansible:
+4. Distribute every inventory node's name to `/etc/hosts` on every node.
+   This is optional, but nice to have!
+
+   ```bash
+   cd ansible && ansible-playbook -i inventory.yml distribute-hostnames.yml
+   ```
+
+   This makes each node reachable by its inventory name (for example,
+   `my-very-cool-box`).
+
+5. Install common packages using Ansible:
 
    ```bash
    cd ansible && ansible-playbook -i inventory.yml setup-common-packages.yml
    ```
 
-5. Install desktop packages to GUI nodes (will be only 1 node):
+6. Install desktop packages on GUI nodes:
 
    ```bash
-   cd ansible && ansible-playbook -i inventory.yml -l <my-GUI-node-hostname> setup-desktop-packages.yml
+   cd ansible && ansible-playbook -i inventory.yml setup-desktop-packages.yml
    ```
 
    - Chromium is reinstalled with Snap since system-wide certificate trusting only
      works in later versions, which `apt` doesn't provide.
 
-6. Set up K3s:
+   **NOTE**: Only nodes with `is_desktop_node: true` in
+   `ansible/inventory.yml` are changed. Nodes where the variable is false or
+   missing are skipped.
+
+7. Configure the controller as the LAN's default gateway:
+
+   ```bash
+   cd ansible && ansible-playbook -i inventory.yml setup-default-gateway.yml
+   ```
+
+   Exactly one Ubuntu node must have `is_default_gateway: true`. The inventory
+   marks the `vision` controller. Configure LAN clients (or DHCP on the switch)
+   to use that node's `ansible_host` address as their IPv4 default gateway.
+
+8. Set up K3s:
 
    ```bash
    cd ansible && ansible-playbook -i inventory.yml setup-k3s.yml
@@ -68,35 +131,48 @@ Currently this setup supports:
    the `10.42.0.0/24` host LAN. Review `ansible/group_vars/all.yml` before
    provisioning a cluster on a different LAN.
 
-7. Deploy sysadmin services to K3s:
+9. Deploy sysadmin services to K3s:
 
    ```bash
    source ./sysadmin-env
    sudo -E ./scripts/apply-sysadmin-services
    ```
 
-   At this point, the sysadmin services will be running on the K3s server node,
-   which you have defined in `ansible/inventory.yml`.
+   At this point, the sysadmin services can run on nodes marked
+   `is_sysadmin_service_node: true` in `ansible/inventory.yml`. The K3s setup
+   playbook gives those nodes the `sysadmin-services=true` Kubernetes label.
 
-   The Rancher and Portainer domain names come from `RANCHER_HOSTNAME` and
-   `PORTAINER_HOSTNAME` in `sysadmin-env`.
+   The Rancher, Harbor, and Portainer domain names come from
+   `RANCHER_HOSTNAME`, `HARBOR_HOSTNAME`, and `PORTAINER_HOSTNAME` in
+   `sysadmin-env`. Harbor's initial `admin` password comes from
+   `HARBOR_ADMIN_PASSWORD`; Rancher's initial administrator password comes from
+   `RANCHER_BOOTSTRAP_PASSWORD`.
 
-8. Trust the certificates from the sysadmin K3s services if you are using self-signed certificates:
+10. Trust the certificates from the sysadmin K3s services, including Harbor's
+   private CA, and distribute them to every K3s node:
 
    ```bash
-   cd $HOME && sudo -E ./scripts/trust-k3s-certs
+   sudo ./scripts/trust-k3s-crets
+   cd ansible && ansible-playbook -i inventory.yml trust-k3s-certs.yml
    ```
 
-9. Log into Portainer (currently at `portainer.<server-node-ip>.sslip.io`) for the first time.
+11. Log into Harbor at the configured `HARBOR_HOSTNAME` as `admin`, using
+    `HARBOR_ADMIN_PASSWORD`. Change the password after the initial login.
 
-   - It's probably a good idea to set the password of the default admin, `admin`,
-     to this user's password.
+12. Log into Portainer at the configured `PORTAINER_HOSTNAME` and create its
+    initial administrator account. Then create an API key and set it as
+    `PORTAINER_API_KEY` in `sysadmin-env` for user-management commands.
 
-10. Log into Rancher (currently at `rancher.<server-node-ip>.sslip.io`) for the first time.
-
-    - Same as above, set `admin` to this user's password.
+13. Log into Rancher at the configured `RANCHER_HOSTNAME` as `admin`, using
+    `RANCHER_BOOTSTRAP_PASSWORD`. Rancher uses this only for initial setup and
+    prompts for the permanent administrator password on first login.
 
 That's it! Now you have K3s running some neat services!
+
+The pinned Harbor release runs on the AMD64 node marked
+`is_sysadmin_service_node: true` in `ansible/inventory.yml`. Harbor can store
+ARM64, AMD64, and multi-platform images regardless of the registry node's
+architecture.
 
 ## Users
 

@@ -1,0 +1,315 @@
+---
+# Configure exactly one Ubuntu node as the LAN's IPv4 default gateway.
+
+- name: Select the default gateway
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Add the selected node to the default gateway group
+      ansible.builtin.group_by:
+        key: default_gateway
+      when: is_default_gateway | default(false) | bool
+
+    - name: Ensure exactly one default gateway exists
+      ansible.builtin.assert:
+        that:
+          - groups.get('default_gateway', []) | length == 1
+        fail_msg: >-
+          Exactly one inventory node must have is_default_gateway: true.
+        success_msg: >-
+          Default gateway: {{ groups['default_gateway'][0] }}
+      run_once: true
+
+- name: Provision the default gateway
+  hosts: default_gateway
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Require Ubuntu on the gateway node
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Ubuntu'
+        fail_msg: >-
+          setup-default-gateway.yml supports Ubuntu; detected
+          {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}.
+
+    - name: Read the node IPv4 interface addresses
+      ansible.builtin.command:
+        argv:
+          - ip
+          - -o
+          - -4
+          - address
+          - show
+      register: default_gateway_ipv4_addresses
+      changed_when: false
+      when: (default_gateway_lan_interface | default('') | length) == 0
+
+    - name: Find the interface carrying the inventory address
+      ansible.builtin.set_fact:
+        default_gateway_detected_lan_interfaces: >-
+          {{
+            default_gateway_ipv4_addresses.stdout_lines
+            | select(
+                'search',
+                ' inet ' ~ (ansible_host | string | regex_escape) ~ '/'
+              )
+            | map(
+                'regex_replace',
+                '^\\d+:\\s+([^\\s@]+)(?:@[^\\s]+)?\\s+.*$',
+                '\\1'
+              )
+            | list
+          }}
+      when: (default_gateway_lan_interface | default('') | length) == 0
+
+    - name: Verify the LAN interface was discovered unambiguously
+      ansible.builtin.assert:
+        that:
+          - default_gateway_detected_lan_interfaces | length == 1
+        fail_msg: >-
+          Could not identify exactly one interface with inventory address
+          {{ ansible_host }}. Set default_gateway_lan_interface explicitly for
+          {{ inventory_hostname }}.
+      when: (default_gateway_lan_interface | default('') | length) == 0
+
+    - name: Select the gateway interfaces
+      ansible.builtin.set_fact:
+        default_gateway_effective_lan_interface: >-
+          {{
+            default_gateway_lan_interface
+            if (default_gateway_lan_interface | default('') | length) > 0
+            else default_gateway_detected_lan_interfaces[0]
+          }}
+        default_gateway_effective_wan_interface: >-
+          {{
+            default_gateway_wan_interface
+            if (default_gateway_wan_interface | default('') | length) > 0
+            else (ansible_facts.default_ipv4 | default({})).get('interface', '')
+          }}
+
+    - name: Validate the gateway network settings
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import ipaddress
+            import re
+            import sys
+
+            lan_cidr, lan_address, lan_interface, wan_interface = sys.argv[1:]
+            lan_network = ipaddress.ip_network(lan_cidr, strict=False)
+            if lan_network.version != 4:
+                raise SystemExit(f"LAN must be IPv4: {lan_network}")
+            if ipaddress.ip_address(lan_address) not in lan_network:
+                raise SystemExit(
+                    f"gateway address {lan_address} is not in LAN {lan_network}"
+                )
+            interface_pattern = re.compile(r"^[A-Za-z0-9_.:@-]+$")
+            if not interface_pattern.fullmatch(lan_interface):
+                raise SystemExit(f"invalid LAN interface: {lan_interface!r}")
+            if not interface_pattern.fullmatch(wan_interface):
+                raise SystemExit(f"invalid WAN interface: {wan_interface!r}")
+          - "{{ default_gateway_lan_cidr }}"
+          - "{{ ansible_host }}"
+          - "{{ default_gateway_effective_lan_interface }}"
+          - "{{ default_gateway_effective_wan_interface }}"
+      changed_when: false
+
+    - name: Verify the selected interfaces exist
+      ansible.builtin.command:
+        argv:
+          - ip
+          - link
+          - show
+          - dev
+          - "{{ item }}"
+      loop:
+        - "{{ default_gateway_effective_lan_interface }}"
+        - "{{ default_gateway_effective_wan_interface }}"
+      changed_when: false
+
+    - name: Install the IPv4 firewall tools
+      ansible.builtin.apt:
+        name: iptables
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Enable persistent IPv4 forwarding
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/90-default-gateway.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible: setup-default-gateway.yml
+          net.ipv4.ip_forward = 1
+          net.ipv4.conf.all.send_redirects = 0
+          net.ipv4.conf.default.send_redirects = 0
+
+    - name: Apply the gateway sysctl settings
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/sysctl
+          - --load
+          - /etc/sysctl.d/90-default-gateway.conf
+      changed_when: false
+
+    - name: Install the managed gateway firewall script
+      ansible.builtin.copy:
+        dest: /usr/local/sbin/manage-default-gateway
+        owner: root
+        group: root
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          set -eu
+
+          lan_cidr={{ default_gateway_lan_cidr | quote }}
+          lan_interface={{ default_gateway_effective_lan_interface | quote }}
+          wan_interface={{ default_gateway_effective_wan_interface | quote }}
+          filter_chain=ANSIBLE-GATEWAY
+          nat_chain=ANSIBLE-GATEWAY-NAT
+          iptables=/usr/sbin/iptables
+
+          remove_jump() {
+            table=$1
+            chain=$2
+            target=$3
+            while "$iptables" -w -t "$table" -C "$chain" -j "$target" 2>/dev/null; do
+              "$iptables" -w -t "$table" -D "$chain" -j "$target"
+            done
+          }
+
+          stop_gateway() {
+            remove_jump filter FORWARD "$filter_chain"
+            remove_jump nat POSTROUTING "$nat_chain"
+
+            if "$iptables" -w -t filter -L "$filter_chain" >/dev/null 2>&1; then
+              "$iptables" -w -t filter -F "$filter_chain"
+              "$iptables" -w -t filter -X "$filter_chain"
+            fi
+            if "$iptables" -w -t nat -L "$nat_chain" >/dev/null 2>&1; then
+              "$iptables" -w -t nat -F "$nat_chain"
+              "$iptables" -w -t nat -X "$nat_chain"
+            fi
+          }
+
+          start_gateway() {
+            stop_gateway
+
+            "$iptables" -w -t filter -N "$filter_chain"
+            "$iptables" -w -t filter -A "$filter_chain" \
+              -i "$lan_interface" -o "$wan_interface" -s "$lan_cidr" \
+              -m conntrack --ctstate NEW,ESTABLISHED,RELATED -j ACCEPT
+            "$iptables" -w -t filter -A "$filter_chain" \
+              -i "$wan_interface" -o "$lan_interface" -d "$lan_cidr" \
+              -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+            "$iptables" -w -t filter -I FORWARD 1 -j "$filter_chain"
+
+            "$iptables" -w -t nat -N "$nat_chain"
+            "$iptables" -w -t nat -A "$nat_chain" \
+              -s "$lan_cidr" -o "$wan_interface" -j MASQUERADE
+            "$iptables" -w -t nat -I POSTROUTING 1 -j "$nat_chain"
+          }
+
+          case "${1:-start}" in
+            start)
+              start_gateway
+              ;;
+            stop)
+              stop_gateway
+              ;;
+            restart)
+              stop_gateway
+              start_gateway
+              ;;
+            *)
+              echo "usage: $0 {start|stop|restart}" >&2
+              exit 2
+              ;;
+          esac
+      notify: Restart default gateway service
+
+    - name: Install the default gateway systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/default-gateway.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Ansible-managed IPv4 default gateway
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/manage-default-gateway start
+          ExecReload=/usr/local/sbin/manage-default-gateway restart
+          ExecStop=/usr/local/sbin/manage-default-gateway stop
+          RemainAfterExit=yes
+
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+        - Reload systemd
+        - Restart default gateway service
+
+    - name: Enable and start the default gateway service
+      ansible.builtin.systemd:
+        name: default-gateway.service
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Verify IPv4 forwarding is enabled
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/sysctl
+          - -n
+          - net.ipv4.ip_forward
+      register: default_gateway_ip_forward
+      changed_when: false
+      failed_when: default_gateway_ip_forward.stdout | trim != '1'
+
+    - name: Verify the managed forwarding rule is active
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/iptables
+          - -w
+          - -t
+          - filter
+          - -C
+          - FORWARD
+          - -j
+          - ANSIBLE-GATEWAY
+      changed_when: false
+
+    - name: Verify the managed masquerade rule is active
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/iptables
+          - -w
+          - -t
+          - nat
+          - -C
+          - POSTROUTING
+          - -j
+          - ANSIBLE-GATEWAY-NAT
+      changed_when: false
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Restart default gateway service
+      ansible.builtin.systemd:
+        name: default-gateway.service
+        state: restarted
+        daemon_reload: true

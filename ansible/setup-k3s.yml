@@ -1,7 +1,7 @@
 ---
 # Install K3s in a cluster
-# Note: ensure that at least one node has k3s_host=true
-# inside of inventory.yml.
+# Note: ensure that exactly one node has k3s_host=true and at least one node
+# has is_sysadmin_service_node=true inside inventory.yml.
 
 - name: Classify K3s nodes
   hosts: all
@@ -72,6 +72,11 @@
       ansible.builtin.group_by:
         key: "k3s_{{ 'server' if (k3s_host | default(false) | bool) else 'agent' }}"
 
+    - name: Add selected node to the sysadmin service group
+      ansible.builtin.group_by:
+        key: k3s_sysadmin_service
+      when: is_sysadmin_service_node | default(false) | bool
+
     - name: Ensure exactly one K3s server exists
       ansible.builtin.assert:
         that:
@@ -80,6 +85,17 @@
           Exactly one node must have k3s_host: true.
         success_msg: >
           K3s server: {{ groups['k3s_server'][0] }}
+      run_once: true
+
+    - name: Ensure at least one sysadmin service node exists
+      ansible.builtin.assert:
+        that:
+          - groups.get('k3s_sysadmin_service', []) | length > 0
+        fail_msg: >-
+          At least one node must have is_sysadmin_service_node: true.
+        success_msg: >-
+          Sysadmin service nodes:
+          {{ groups['k3s_sysadmin_service'] | join(', ') }}
       run_once: true
 
 - name: Install K3s server
@@ -204,14 +220,6 @@
         k3s_token: "{{ k3s_token_file.content | b64decode | trim }}"
       no_log: true
 
-    - name: Label K3s server node as sysadmin-services
-      ansible.builtin.command:
-        cmd: >
-          k3s kubectl label node
-          {{ inventory_hostname }}
-          sysadmin-services=true
-          --overwrite
-
   handlers:
     - name: Restart K3s server
       ansible.builtin.systemd:
@@ -332,6 +340,47 @@
           --all
           --timeout=180s
       changed_when: false
+
+    - name: Read the current sysadmin service nodes
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/k3s
+          - kubectl
+          - get
+          - nodes
+          - --selector=sysadmin-services=true
+          - --output=jsonpath={range .items[*]}{.metadata.name}{"\n"}{end}
+      register: current_sysadmin_service_nodes
+      changed_when: false
+
+    - name: Label selected sysadmin service nodes
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/k3s
+          - kubectl
+          - label
+          - node
+          - "{{ item }}"
+          - sysadmin-services=true
+          - --overwrite
+      loop: >-
+        {{ groups['k3s_sysadmin_service'] |
+           difference(current_sysadmin_service_nodes.stdout_lines) }}
+      changed_when: true
+
+    - name: Remove the label from unselected sysadmin service nodes
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/k3s
+          - kubectl
+          - label
+          - node
+          - "{{ item }}"
+          - sysadmin-services-
+      loop: >-
+        {{ current_sysadmin_service_nodes.stdout_lines |
+           difference(groups['k3s_sysadmin_service']) }}
+      changed_when: true
 
     - name: Read node Pod CIDR assignments
       ansible.builtin.command:

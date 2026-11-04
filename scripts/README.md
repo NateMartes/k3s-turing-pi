@@ -21,7 +21,7 @@ store and the Chromium trust store as well. This is nice for removing warnings f
 clusters when proper DNS is not set up yet.
 
 ```bash
-sudo -E ./trust-k3s-certs
+sudo -E ./trust-k3s-crets
 ```
 
 ### `create-user`
