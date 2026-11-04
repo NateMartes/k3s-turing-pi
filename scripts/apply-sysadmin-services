@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from config_env import SYSADMIN_ENV, load_sysadmin_env_or_exit
@@ -129,20 +130,40 @@ def wait_for_harbor_database_before_upgrade() -> None:
         text=True,
     )
     try:
-        subprocess.run(
-            [
-                "kubectl",
-                "wait",
-                "--for=jsonpath={.status.readyReplicas}=1",
-                database,
-                "--namespace",
-                namespace,
-                "--timeout=30m",
-            ],
-            check=True,
-        )
-    except subprocess.CalledProcessError:
-        die("The Harbor database did not become ready within 30 minutes.")
+        deadline = time.monotonic() + (30 * 60)
+        while True:
+            try:
+                status = subprocess.run(
+                    [
+                        "kubectl",
+                        "get",
+                        database,
+                        "--namespace",
+                        namespace,
+                        "--output=jsonpath={.status.readyReplicas}",
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                detail = (exc.stderr or exc.stdout or "unknown error").strip()
+                die(f"Could not read Harbor database readiness: {detail}")
+
+            ready_replicas = status.stdout.strip() or "0"
+            if ready_replicas == "1":
+                break
+
+            remaining = max(0, int(deadline - time.monotonic()))
+            if remaining == 0:
+                die("The Harbor database did not become ready within 30 minutes.")
+
+            print(
+                "Harbor PostgreSQL is still waiting for Kubernetes readiness "
+                f"(readyReplicas={ready_replicas}, timeout={remaining}s).",
+                flush=True,
+            )
+            time.sleep(min(10, remaining))
     finally:
         if database_logs.poll() is None:
             database_logs.terminate()

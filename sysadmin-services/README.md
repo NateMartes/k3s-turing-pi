@@ -63,6 +63,8 @@ For an existing Harbor installation, the script also waits up to 30 minutes
 for PostgreSQL to become ready before updating the Helm chart. This keeps the
 pre-upgrade database migration job from starting while PostgreSQL is still
 recovering. The script streams the database Pod logs during this wait.
+It also prints the StatefulSet's ready-replica count every 10 seconds so the
+gap between PostgreSQL startup messages and Kubernetes readiness is visible.
 
 ### 4. Check the deployment
 
