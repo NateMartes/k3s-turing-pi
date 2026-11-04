@@ -21,7 +21,7 @@ store and the Chromium trust store as well. This is nice for removing warnings f
 clusters when proper DNS is not set up yet.
 
 ```bash
-sudo -E ./trust-k3s-crets
+sudo ./trust-k3s-crets
 ```
 
 ### `create-user`
@@ -43,7 +43,7 @@ Creates a complete managed user.
 - Prints all created resources and the generated password.
 
 ```bash
-sudo -E ./user-scripts/create-user -u bob -q 5GB
+sudo ./user-scripts/create-user -u bob -q 5GB
 ```
 
 Quota may be specified as MB or GB:
@@ -64,19 +64,19 @@ It removes, in reverse provisioning order:
 By default, the user's home directory is preserved.
 
 ```bash
-sudo -E ./user-scripts/remove-user -u bob
+sudo ./user-scripts/remove-user -u bob
 ```
 
 To also delete the home directory and Docker data:
 
 ```bash
-sudo -E ./user-scripts/remove-user -u bob --purge-data
+sudo ./user-scripts/remove-user -u bob --purge-data
 ```
 
 For non-interactive removal:
 
 ```bash
-sudo -E ./user-scripts/remove-user -u bob --yes
+sudo ./user-scripts/remove-user -u bob --yes
 ```
 
 ### `change-user-password`
@@ -95,7 +95,7 @@ Linux is updated last so that a failed Rancher or Portainer update does not
 knowingly leave Linux on a different password.
 
 ```bash
-sudo -E ./user-scripts/change-user-password -u bob
+sudo ./user-scripts/change-user-password -u bob
 ```
 
 ### `enable-quotas`
@@ -161,7 +161,7 @@ sudo ./plumbing-scripts/uninstall-docker-rootless -u bob --purge-data
 Runs a Portainer Agent against the user's rootless Docker socket.
 
 ```bash
-sudo -E ./plumbing-scripts/install-portainer-agent \
+sudo ./plumbing-scripts/install-portainer-agent \
   -u bob \
   -H portainer.10.42.0.31.sslip.io \
   --port 9002
@@ -182,7 +182,7 @@ sudo ./plumbing-scripts/uninstall-portainer-agent -u bob
 Creates `<username>-namespace`, a service account, RBAC, and the user's kubeconfig.
 
 ```bash
-sudo -E ./plumbing-scripts/install-k3s-namespace -u bob
+sudo ./plumbing-scripts/install-k3s-namespace -u bob
 ```
 
 ### `uninstall-k3s-namespace`
@@ -190,7 +190,7 @@ sudo -E ./plumbing-scripts/install-k3s-namespace -u bob
 Deletes the user's namespace and the kubeconfig created by this tool.
 
 ```bash
-sudo -E ./plumbing-scripts/uninstall-k3s-namespace -u bob
+sudo ./plumbing-scripts/uninstall-k3s-namespace -u bob
 ```
 
 Deleting the namespace also deletes namespaced Kubernetes resources inside it.
@@ -200,7 +200,7 @@ Deleting the namespace also deletes namespaced Kubernetes resources inside it.
 Creates a Rancher user and project and assigns the user's namespace to that project.
 
 ```bash
-sudo -E ./plumbing-scripts/install-rancher-account \
+sudo ./plumbing-scripts/install-rancher-account \
   -u bob \
   --cluster-id local
 ```
@@ -216,7 +216,7 @@ rancher.10.42.0.31.sslip.io
 Deletes the user's Rancher project and Rancher account.
 
 ```bash
-sudo -E ./plumbing-scripts/uninstall-rancher-account \
+sudo ./plumbing-scripts/uninstall-rancher-account \
   -u bob \
   --cluster-id local
 ```
@@ -228,7 +228,7 @@ Updates an existing Rancher user's password.
 Normally called by `change-user-password`.
 
 ```bash
-sudo -E ./plumbing-scripts/set-rancher-password -u bob
+sudo ./plumbing-scripts/set-rancher-password -u bob
 ```
 
 ### `install-portainer-account`
@@ -236,7 +236,7 @@ sudo -E ./plumbing-scripts/set-rancher-password -u bob
 Creates a Portainer account and registers the user's Agent environment.
 
 ```bash
-sudo -E ./plumbing-scripts/install-portainer-account \
+sudo ./plumbing-scripts/install-portainer-account \
   -u bob \
   --agent-address node1.example.internal:9002
 ```
@@ -246,7 +246,7 @@ sudo -E ./plumbing-scripts/install-portainer-account \
 Deletes the user's Portainer environment and Portainer account.
 
 ```bash
-sudo -E ./plumbing-scripts/uninstall-portainer-account -u bob
+sudo ./plumbing-scripts/uninstall-portainer-account -u bob
 ```
 
 ## Dependencies
@@ -308,24 +308,15 @@ UUID=... /home ext4 defaults,usrquota 0 2
 After enabling quotas, the filesystem may need to be remounted and quota metadata
 initialized before `setquota` can work.
 
-## Authentication Environment Variables
+## Administrator configuration
 
-For administrator operations, use environment variables rather than putting
-sensitive administrator credentials directly in shell history.
-
-### Rancher
-
-```bash
-export RANCHER_TOKEN='token-xxxxx:yyyyyyyy'
-export RANCHER_CLUSTER_ID='local'
-export RANCHER_HOSTNAME='rancher.10.42.0.31.sslip.io'
-```
-
-### Portainer
+Administrator operations read hostnames and credentials from
+`/etc/k3s-turing-pi/sysadmin-env`. From the repository root, install the
+configured file with root-only permissions before running these commands:
 
 ```bash
-export PORTAINER_API_KEY='ptr_xxxxxxxxx'
-export PORTAINER_HOSTNAME='portainer.10.42.0.31.sslip.io'
+sudo install -D -o root -g root -m 600 \
+  ./etc/sysadmin-env /etc/k3s-turing-pi/sysadmin-env
 ```
 
 The hostname variables are required by both the main user commands and the
@@ -333,10 +324,14 @@ plumbing scripts. Explicit hostname command-line options still take precedence;
 commands that have neither a configured variable nor an explicit/stored
 hostname exit with an error.
 
-Then preserve those environment variables through `sudo`:
+Whenever a value changes, update the repository's `etc/sysadmin-env` and rerun the
+`install` command above. The next administration command will read the new
+values from the installed file.
+
+Then run the command normally through `sudo`:
 
 ```bash
-sudo -E ./user-scripts/create-user -u bob -q 5GB
+sudo ./user-scripts/create-user -u bob -q 5GB
 ```
 
 ## State Files
@@ -372,7 +367,7 @@ All command files in `user-scripts/` and `plumbing-scripts/` are marked executab
 You can run them directly:
 
 ```bash
-sudo -E ./user-scripts/create-user -u bob -q 5GB
+sudo ./user-scripts/create-user -u bob -q 5GB
 ```
 
 or install/symlink the main commands into `/usr/local/bin`.

@@ -14,6 +14,11 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from config_env import SYSADMIN_ENV, load_sysadmin_env_or_exit
+
+
+load_sysadmin_env_or_exit()
+
 STATE_ROOT = Path(__file__).resolve().parent / "state"
 DEFAULT_RANCHER_HOST = os.getenv("RANCHER_HOSTNAME")
 DEFAULT_PORTAINER_HOST = os.getenv("PORTAINER_HOSTNAME")
@@ -39,7 +44,7 @@ def require_hostname(value: Optional[str], variable: str, option: str) -> str:
     if value:
         return value
     die(
-        f"{variable} is not set. Source sysadmin-env or provide {option}."
+        f"{variable} is not set in {SYSADMIN_ENV}; provide {option} or update the file."
     )
 
 

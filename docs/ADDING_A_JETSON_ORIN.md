@@ -280,7 +280,12 @@ make -C "$KERNEL_SRC" \
   -j"$(nproc)" \
   Image modules
 
-sudo -E make -C "$KERNEL_SRC" modules_install
+sudo make -C "$KERNEL_SRC" \
+  ARCH="$ARCH" \
+  CROSS_COMPILE="$CROSS_COMPILE" \
+  LOCALVERSION="$LOCALVERSION" \
+  INSTALL_MOD_PATH="$INSTALL_MOD_PATH" \
+  modules_install
 
 cp "$KERNEL_SRC/arch/arm64/boot/Image" \
   "$NVIDIA_DIR/Linux_for_Tegra/kernel/Image"
@@ -299,7 +304,14 @@ export kernel_name=noble
 # Do not interrupt it just because it appears quiet.
 
 make -j"$(nproc)" modules
-sudo -E make modules_install
+sudo make \
+  ARCH="$ARCH" \
+  CROSS_COMPILE="$CROSS_COMPILE" \
+  LOCALVERSION="$LOCALVERSION" \
+  INSTALL_MOD_PATH="$INSTALL_MOD_PATH" \
+  KERNEL_HEADERS="$KERNEL_HEADERS" \
+  kernel_name="$kernel_name" \
+  modules_install
 
 
 ###############################################################################

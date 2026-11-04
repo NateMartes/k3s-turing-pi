@@ -22,7 +22,7 @@ store images for ARM64, AMD64, and other platforms.
 
 ### 2. Configure hostnames and initial credentials
 
-Update `sysadmin-env` with the values for this cluster:
+Update the repository's `etc/sysadmin-env` with the values for this cluster:
 
 ```bash
 export RANCHER_HOSTNAME="rancher.10.42.0.31.sslip.io"
@@ -39,16 +39,22 @@ these environment variables later does not reset an existing installation.
 
 Portainer prompts for its initial administrator account when first opened.
 Afterward, create a Portainer API key and store it as `PORTAINER_API_KEY` in
-`sysadmin-env` for the repository's user-management scripts.
+`etc/sysadmin-env` for the repository's user-management scripts.
 
 ### 3. Deploy the services
 
-Load the environment and run the apply script:
+Install the configuration with root-only permissions, then run the apply script:
 
 ```bash
-source ./sysadmin-env
-sudo -E ./scripts/apply-sysadmin-services
+sudo install -D -o root -g root -m 600 \
+  ./etc/sysadmin-env /etc/k3s-turing-pi/sysadmin-env
+sudo ./scripts/apply-sysadmin-services
 ```
+
+The administration scripts read `/etc/k3s-turing-pi/sysadmin-env`
+automatically. Whenever a value changes in the repository's `etc/sysadmin-env`,
+rerun the `install` command to replace the installed copy, then rerun the
+affected administration command.
 
 Use this script instead of `kubectl apply -k`. Kubernetes does not expand the
 environment-variable placeholders in the committed manifests, so the script
@@ -59,10 +65,10 @@ validates, renders, and replaces them in memory before applying the resources.
 Inspect the Helm installations and Pods:
 
 ```bash
-sudo -E k3s kubectl get helmcharts -n kube-system
-sudo -E k3s kubectl get pods -n sysadmin-system
-sudo -E k3s kubectl get pods -n cattle-system
-sudo -E k3s kubectl get pods -n cert-manager
+sudo k3s kubectl get helmcharts -n kube-system
+sudo k3s kubectl get pods -n sysadmin-system
+sudo k3s kubectl get pods -n cattle-system
+sudo k3s kubectl get pods -n cert-manager
 ```
 
 Harbor consists of several Pods and can take longer than Portainer to become

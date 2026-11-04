@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from config_env import SYSADMIN_ENV, load_sysadmin_env_or_exit
+
 
 HOSTNAME_VARIABLES = (
     "RANCHER_HOSTNAME",
@@ -23,6 +25,9 @@ JSON_SECRET_VARIABLES = (
 BASE64_SECRET_VARIABLES = (
     "HARBOR_ADMIN_PASSWORD",
 )
+
+
+load_sysadmin_env_or_exit()
 
 
 def die(message: str) -> None:
@@ -44,14 +49,14 @@ def configured_values() -> dict[str, str]:
     for variable in HOSTNAME_VARIABLES:
         value = os.environ.get(variable, "").strip()
         if not value:
-            die(f"{variable} is not set. Source sysadmin-env before applying services.")
+            die(f"{variable} is not set in {SYSADMIN_ENV}.")
         validate_hostname(variable, value)
         values[variable] = value
 
     for variable in JSON_SECRET_VARIABLES:
         value = os.environ.get(variable, "")
         if not value:
-            die(f"{variable} is not set. Source sysadmin-env before applying services.")
+            die(f"{variable} is not set in {SYSADMIN_ENV}.")
         if "\n" in value or "\r" in value:
             die(f"{variable} must not contain a newline.")
         # JSON strings are also valid YAML scalars and safely preserve special
@@ -61,7 +66,7 @@ def configured_values() -> dict[str, str]:
     for variable in BASE64_SECRET_VARIABLES:
         value = os.environ.get(variable, "")
         if not value:
-            die(f"{variable} is not set. Source sysadmin-env before applying services.")
+            die(f"{variable} is not set in {SYSADMIN_ENV}.")
         if "\n" in value or "\r" in value:
             die(f"{variable} must not contain a newline.")
         values[f"{variable}_B64"] = base64.b64encode(

@@ -5,3 +5,4 @@ export HARBOR_HOSTNAME="harbor.10.42.0.31.sslip.io"
 export RANCHER_BOOTSTRAP_PASSWORD='changeme'
 export RANCHER_TOKEN="changeme"
 export RANCHER_HOSTNAME="rancher.10.42.0.31.sslip.io"
+# Cluster administrator configuration.

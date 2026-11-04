@@ -55,14 +55,14 @@ Currently this setup supports:
      --file k3s-turing-pi.tar.gz \
      --directory k3s-turing-pi \
      --exclude='*/ansible' \
-     --exclude='*/env-example' \
+     --exclude='*/etc/sysadmin-env' \
      --strip-components=1
    ```
 
    The `*/` prefix matches the top-level directory included in GitHub's source
    archive. Add, remove, or change the exclusion patterns for the paths you do
-   not want to extract. This repository does not currently contain an
-   `env-example` file; it is shown only as an example pattern.
+   not want to extract. Excluding `etc/sysadmin-env` preserves your configured
+   hostnames and credentials when updating from a source archive.
 
 1. Set up your nodes. Follow the appropriate guide for your hardware:
 
@@ -149,9 +149,19 @@ Currently this setup supports:
 10. Deploy sysadmin services to K3s:
 
    ```bash
-   source ./sysadmin-env
-   sudo -E ./scripts/apply-sysadmin-services
+   sudo install -D -o root -g root -m 600 \
+     ./etc/sysadmin-env /etc/k3s-turing-pi/sysadmin-env
+   sudo ./scripts/apply-sysadmin-services
    ```
+
+   The first command copies the repository's configuration into `/etc` with
+   permissions that allow only root to read or change it. The administration
+   scripts load their configuration from `/etc/k3s-turing-pi/sysadmin-env`
+   automatically.
+
+   When values in `etc/sysadmin-env` change, rerun the `install` command above to
+   update `/etc/k3s-turing-pi/sysadmin-env`, then rerun the affected
+   administration command.
 
    At this point, the sysadmin services can run on nodes marked
    `is_sysadmin_service_node: true` in `ansible/inventory.yml`. The K3s setup
@@ -159,7 +169,7 @@ Currently this setup supports:
 
    The Rancher, Harbor, and Portainer domain names come from
    `RANCHER_HOSTNAME`, `HARBOR_HOSTNAME`, and `PORTAINER_HOSTNAME` in
-   `sysadmin-env`. Harbor's initial `admin` password comes from
+   `/etc/k3s-turing-pi/sysadmin-env`. Harbor's initial `admin` password comes from
    `HARBOR_ADMIN_PASSWORD`; Rancher's initial administrator password comes from
    `RANCHER_BOOTSTRAP_PASSWORD`.
 
@@ -176,7 +186,8 @@ Currently this setup supports:
 
 13. Log into Portainer at the configured `PORTAINER_HOSTNAME` and create its
     initial administrator account. Then create an API key and set it as
-    `PORTAINER_API_KEY` in `sysadmin-env` for user-management commands.
+    `PORTAINER_API_KEY` in `etc/sysadmin-env`, then reinstall the file at
+    `/etc/k3s-turing-pi/sysadmin-env` for user-management commands.
 
 14. Log into Rancher at the configured `RANCHER_HOSTNAME` as `admin`, using
     `RANCHER_BOOTSTRAP_PASSWORD`. Rancher uses this only for initial setup and
@@ -198,15 +209,16 @@ architecture.
 2. Get a Rancher API token from the current Rancher instance.
 
    From the UI, log in, and then go to your account and create an API key.
-   Set the key as `RANCHER_TOKEN` in `sysadmin-env`. The file also specifies
-   `RANCHER_HOSTNAME` for the Rancher instance used by the scripts.
+   Set the key as `RANCHER_TOKEN` in `etc/sysadmin-env`, reinstall it at
+   `/etc/k3s-turing-pi/sysadmin-env`. The file's `RANCHER_HOSTNAME` selects the
+   Rancher instance used by the scripts.
 
 3. Get a Portainer API token from the current Portainer instance.
 
    From the UI, log in, and then go to your account and create an API key.
-   Set the key as `PORTAINER_API_KEY` in `sysadmin-env`. The file also specifies
-   `PORTAINER_HOSTNAME` for the Portainer instance used by the scripts. Then run
-   `source sysadmin-env` before the user-management commands.
+   Set the key as `PORTAINER_API_KEY` in `etc/sysadmin-env`, then reinstall it at
+   `/etc/k3s-turing-pi/sysadmin-env`. The file also specifies
+   `PORTAINER_HOSTNAME` for the Portainer instance used by the scripts.
 
 4. Enable quotas for users:
 
@@ -217,20 +229,20 @@ architecture.
 5. Run the create-user script:
 
    ```bash
-   sudo -E ./scripts/create-user -u <new-user>
+   sudo ./scripts/create-user -u <new-user>
    ```
 
 This will make accounts on the services above, automatically.
 In the event of failures, you can revert the changes:
 
 ```bash
-sudo -E ./scripts/remove-user -u <new-user>
+sudo ./scripts/remove-user -u <new-user>
 ```
 
 ### Updating User Passwords
 
 ```bash
-sudo -E ./scripts/change-user-password -u <new-user>
+sudo ./scripts/change-user-password -u <new-user>
 ```
 
 This will update the passwords in K3s services too!
@@ -241,5 +253,5 @@ not allow a password to be updated.
 ### Removing Users
 
 ```bash
-sudo -E ./scripts/remove-user -u <new-user>
+sudo ./scripts/remove-user -u <new-user>
 ```

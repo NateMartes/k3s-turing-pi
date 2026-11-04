@@ -13,6 +13,12 @@ import sys
 from pathlib import Path
 from typing import Iterable, Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config_env import SYSADMIN_ENV, load_sysadmin_env_or_exit
+
+
+load_sysadmin_env_or_exit()
+
 MANAGED_MARKER = "# Managed by sysadmin. Created by {}"
 DEFAULT_RANCHER_HOST = os.environ.get("RANCHER_HOSTNAME")
 DEFAULT_PORTAINER_HOST = os.environ.get("PORTAINER_HOSTNAME")
@@ -28,7 +34,7 @@ def require_hostname(value: Optional[str], variable: str) -> str:
     if value:
         return value
     die(
-        f"{variable} is not set. Source sysadmin-env or provide --hostname."
+        f"{variable} is not set in {SYSADMIN_ENV}; provide --hostname or update the file."
     )
 
 def info(message: str) -> None:
