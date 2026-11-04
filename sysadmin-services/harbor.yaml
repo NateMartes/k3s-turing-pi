@@ -95,38 +95,12 @@ spec:
         requests:
           cpu: 100m
           memory: 256Mi
-      initContainers:
-        - name: wait-for-database
-          image: docker.io/goharbor/harbor-db:v2.15.4
-          imagePullPolicy: IfNotPresent
-          command:
-            - /bin/sh
-            - -ec
-          args:
-            - |
-              until pg_isready --host=harbor-database --port=5432; do
-                echo "Waiting for Harbor database"
-                sleep 2
-              done
     jobservice:
       nodeSelector: *harborNodeSelector
       resources:
         requests:
           cpu: 100m
           memory: 256Mi
-      initContainers:
-        - name: wait-for-core
-          image: docker.io/goharbor/harbor-core:v2.15.4
-          imagePullPolicy: IfNotPresent
-          command:
-            - /bin/sh
-            - -ec
-          args:
-            - |
-              until curl --fail --silent http://harbor-core/api/v2.0/ping; do
-                echo "Waiting for Harbor core"
-                sleep 2
-              done
     registry:
       nodeSelector: *harborNodeSelector
     trivy:

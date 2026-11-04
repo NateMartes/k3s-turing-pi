@@ -132,6 +132,55 @@ Create a Harbor project before pushing images. Kubernetes workloads should use
 a namespace-scoped `imagePullSecret` instead of embedding administrator
 credentials in Pod specifications.
 
+## Known Issues
+
+### Harbor database startup on Linux 7.0.0-42
+
+Ubuntu 26.04's `7.0.0-42-generic` kernel has an observed AppArmor regression
+that can prevent Harbor's PostgreSQL container from starting. The problem
+occurs when `kernel.apparmor_restrict_unprivileged_unconfined=1` causes the
+containerd AppArmor profile to be stacked with `unconfined`. Signal delivery
+inside the container can then fail with `EPERM`, disrupting PostgreSQL startup
+or an on-disk database upgrade. Core and jobservice consequently fail to start
+or remain unready because the database Pod never becomes ready.
+
+Confirm the affected kernel and setting on the node that hosts Harbor:
+
+```bash
+uname -r
+sysctl kernel.apparmor_restrict_unprivileged_unconfined
+sudo journalctl -k --grep='apparmor.*DENIED'
+```
+
+The preferred workaround is to boot the node with the previous working kernel,
+such as `7.0.0-38-generic`, until the regression is fixed. This preserves the
+Ubuntu AppArmor hardening setting.
+
+If booting an earlier kernel is not immediately possible, temporarily disable
+only the affected restriction on every node that can run Harbor:
+
+```bash
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_unconfined=0
+echo 'kernel.apparmor_restrict_unprivileged_unconfined = 0' \
+  | sudo tee /etc/sysctl.d/90-k3s-container-apparmor.conf
+sudo sysctl --system
+```
+
+AppArmor labels are assigned when a container is created, so recreate the
+database Pod after changing the setting:
+
+```bash
+sudo k3s kubectl delete pod harbor-database-0 -n sysadmin-system
+sudo k3s kubectl get pods -n sysadmin-system --watch
+```
+
+Setting `kernel.apparmor_restrict_unprivileged_unconfined=0` relaxes one Ubuntu
+AppArmor hardening control; it does not disable AppArmor entirely. Remove the
+override and restore the value to `1` after installing a fixed kernel, then
+recreate affected Pods. A detailed reproduction and explanation of the same
+container signal-denial behavior is available in this
+[AppArmor regression investigation](https://homelab2.e-whisper.com/how-to-guides/troubleshooting/apparmor-signal-denied/).
+
 ## Deployment Reference
 
 ### Namespace layout
