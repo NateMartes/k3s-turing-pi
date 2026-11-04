@@ -76,6 +76,55 @@ def configured_values() -> dict[str, str]:
     return values
 
 
+def wait_for_harbor_database_before_upgrade() -> None:
+    database = "statefulset/harbor-database"
+    namespace = "sysadmin-system"
+
+    try:
+        existing = subprocess.run(
+            [
+                "kubectl",
+                "get",
+                database,
+                "--namespace",
+                namespace,
+                "--ignore-not-found",
+                "--output=name",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        die("kubectl was not found in PATH.")
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "unknown error").strip()
+        die(f"Could not inspect the Harbor database: {detail}")
+
+    # A fresh installation has no database yet and does not run the chart's
+    # pre-upgrade migration hook. Existing installations must have a ready
+    # database before updating the HelmChart and creating that hook Job.
+    if not existing.stdout.strip():
+        return
+
+    print("Waiting for the Harbor database before starting its Helm upgrade...")
+    try:
+        subprocess.run(
+            [
+                "kubectl",
+                "wait",
+                "--for=jsonpath={.status.readyReplicas}=1",
+                database,
+                "--namespace",
+                namespace,
+                "--timeout=30m",
+            ],
+            check=True,
+        )
+    except subprocess.CalledProcessError:
+        die("The Harbor database did not become ready within 30 minutes.")
+
+
 def run() -> None:
     values = configured_values()
     repository = Path(__file__).resolve().parent.parent
@@ -104,6 +153,8 @@ def run() -> None:
     unresolved = "${" in rendered
     if unresolved:
         die("The rendered manifests contain an unresolved environment placeholder.")
+
+    wait_for_harbor_database_before_upgrade()
 
     try:
         subprocess.run(

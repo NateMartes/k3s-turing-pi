@@ -59,6 +59,10 @@ affected administration command.
 Use this script instead of `kubectl apply -k`. Kubernetes does not expand the
 environment-variable placeholders in the committed manifests, so the script
 validates, renders, and replaces them in memory before applying the resources.
+For an existing Harbor installation, the script also waits up to 30 minutes
+for PostgreSQL to become ready before updating the Helm chart. This keeps the
+pre-upgrade database migration job from starting while PostgreSQL is still
+recovering.
 
 ### 4. Check the deployment
 

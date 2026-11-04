@@ -23,7 +23,7 @@ spec:
   version: 1.19.4
   targetNamespace: sysadmin-system
   createNamespace: false
-  timeout: 20m
+  timeout: 30m
   backOffLimit: 20
   valuesContent: |-
     expose:
@@ -46,6 +46,8 @@ spec:
 
     # Run schema migrations before upgrading the Harbor workloads so core does
     # not have to migrate the database while jobservice is trying to start.
+    # scripts/apply-sysadmin-services waits for PostgreSQL before updating this
+    # HelmChart because the upstream migration Job has no init-container hook.
     enableMigrateHelmHook: true
 
     existingSecretAdminPassword: harbor-admin-password
@@ -132,6 +134,18 @@ spec:
     database:
       internal:
         nodeSelector: *harborNodeSelector
+        livenessProbe:
+          initialDelaySeconds: 1200
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+          successThreshold: 1
+        readinessProbe:
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+          successThreshold: 1
         resources:
           requests:
             cpu: 100m
