@@ -62,7 +62,7 @@ validates, renders, and replaces them in memory before applying the resources.
 For an existing Harbor installation, the script also waits up to 30 minutes
 for PostgreSQL to become ready before updating the Helm chart. This keeps the
 pre-upgrade database migration job from starting while PostgreSQL is still
-recovering.
+recovering. The script streams the database Pod logs during this wait.
 
 ### 4. Check the deployment
 

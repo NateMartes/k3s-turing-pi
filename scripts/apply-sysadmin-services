@@ -107,7 +107,27 @@ def wait_for_harbor_database_before_upgrade() -> None:
     if not existing.stdout.strip():
         return
 
-    print("Waiting for the Harbor database before starting its Helm upgrade...")
+    print(
+        "Waiting for the Harbor database before starting its Helm upgrade; "
+        "streaming database logs...",
+        flush=True,
+    )
+    database_logs = subprocess.Popen(
+        [
+            "kubectl",
+            "logs",
+            database,
+            "--namespace",
+            namespace,
+            "--all-containers=true",
+            "--follow",
+            "--prefix=true",
+            "--timestamps=true",
+            "--tail=20",
+            "--pod-running-timeout=30m",
+        ],
+        text=True,
+    )
     try:
         subprocess.run(
             [
@@ -123,6 +143,16 @@ def wait_for_harbor_database_before_upgrade() -> None:
         )
     except subprocess.CalledProcessError:
         die("The Harbor database did not become ready within 30 minutes.")
+    finally:
+        if database_logs.poll() is None:
+            database_logs.terminate()
+            try:
+                database_logs.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                database_logs.kill()
+                database_logs.wait()
+
+    print("Harbor database is ready; continuing with the Helm upgrade.")
 
 
 def run() -> None:
