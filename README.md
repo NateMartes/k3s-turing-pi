@@ -64,7 +64,12 @@ Currently this setup supports:
    not want to extract. This repository does not currently contain an
    `env-example` file; it is shown only as an example pattern.
 
-1. Make sure this account has SSH access to all nodes in your cluster:
+1. Set up your nodes. Follow the appropriate guide for your hardware:
+
+   - [Adding a new node (like a RK1)](docs/ADDING_A_NEW_NODE.md)
+   - [Adding a Jetson Orin](docs/ADDING_A_JETSON_ORIN.md)
+
+2. Make sure this account has SSH access to all nodes in your cluster:
 
    ```bash
    ssh-keygen && ssh-copy-id sysadmin@<my-node>
@@ -72,17 +77,21 @@ Currently this setup supports:
 
    Every node should be able to SSH into every other node.
 
-2. Install Ansible on this node:
+3. Install Ansible on this node:
 
    ```bash
    sudo apt update && sudo apt install -y ansible
    ```
 
-3. Ensure your node inventory (`ansible/inventory.yml`) points to every node.
+4. Ensure your node inventory (`ansible/inventory.yml`) points to every node.
    See the inventory variable table in `ansible/README.md` for the supported
    global and per-host settings.
 
-4. Configure the controller as the LAN's default gateway:
+5. Configure the controller as the LAN's default gateway.
+   Depending on your setup, you won't have to do this. You might
+   A router acting as your default gateway, which is great too! But if you
+   don't and you are just using one central manchine to bridge your nodes to the
+   outside world, you'll need IP Forwarding:
 
    ```bash
    cd ansible && ansible-playbook -i inventory.yml setup-default-gateway.yml
@@ -93,7 +102,10 @@ Currently this setup supports:
    access. The remaining nodes can use its `ansible_host` address as their IPv4
    default gateway once the playbook finishes.
 
-5. Distribute every inventory node's name to `/etc/hosts` on every node.
+    At this point, go onto one of your nodes and try to `curl` or `ping` a service
+    (like `google.com` or `ibm.com`) to make sure you the nodes can reach the internet.
+
+6. Distribute every inventory node's name to `/etc/hosts` on every node.
    This is optional, but nice to have!
 
    ```bash
@@ -103,13 +115,13 @@ Currently this setup supports:
    This makes each node reachable by its inventory name (for example,
    `my-very-cool-box`).
 
-6. Install common packages using Ansible:
+7. Install common packages using Ansible:
 
    ```bash
    cd ansible && ansible-playbook -i inventory.yml setup-common-packages.yml
    ```
 
-7. Install desktop packages on GUI nodes:
+8. Install desktop packages on GUI nodes:
 
    ```bash
    cd ansible && ansible-playbook -i inventory.yml setup-desktop-packages.yml
@@ -122,7 +134,7 @@ Currently this setup supports:
    `ansible/inventory.yml` are changed. Nodes where the variable is false or
    missing are skipped.
 
-8. Set up K3s:
+9. Set up K3s:
 
    ```bash
    cd ansible && ansible-playbook -i inventory.yml setup-k3s.yml
@@ -131,8 +143,10 @@ Currently this setup supports:
    The default K3s Pod network is `10.244.0.0/16`, deliberately separate from
    the `10.42.0.0/24` host LAN. Review `ansible/group_vars/all.yml` before
    provisioning a cluster on a different LAN.
+    If in the future you ever add more nodes, just re-run this command to add them
+    to the cluster.
 
-9. Deploy sysadmin services to K3s:
+10. Deploy sysadmin services to K3s:
 
    ```bash
    source ./sysadmin-env
@@ -149,7 +163,7 @@ Currently this setup supports:
    `HARBOR_ADMIN_PASSWORD`; Rancher's initial administrator password comes from
    `RANCHER_BOOTSTRAP_PASSWORD`.
 
-10. Trust the certificates from the sysadmin K3s services, including Harbor's
+11. Trust the certificates from the sysadmin K3s services, including Harbor's
    private CA, and distribute them to every K3s node:
 
    ```bash
@@ -157,14 +171,14 @@ Currently this setup supports:
    cd ansible && ansible-playbook -i inventory.yml trust-k3s-certs.yml
    ```
 
-11. Log into Harbor at the configured `HARBOR_HOSTNAME` as `admin`, using
+12. Log into Harbor at the configured `HARBOR_HOSTNAME` as `admin`, using
     `HARBOR_ADMIN_PASSWORD`. Change the password after the initial login.
 
-12. Log into Portainer at the configured `PORTAINER_HOSTNAME` and create its
+13. Log into Portainer at the configured `PORTAINER_HOSTNAME` and create its
     initial administrator account. Then create an API key and set it as
     `PORTAINER_API_KEY` in `sysadmin-env` for user-management commands.
 
-13. Log into Rancher at the configured `RANCHER_HOSTNAME` as `admin`, using
+14. Log into Rancher at the configured `RANCHER_HOSTNAME` as `admin`, using
     `RANCHER_BOOTSTRAP_PASSWORD`. Rancher uses this only for initial setup and
     prompts for the permanent administrator password on first login.
 

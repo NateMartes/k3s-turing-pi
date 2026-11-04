@@ -321,24 +321,38 @@
   hosts: k3s_server
   become: true
 
+  vars:
+    k3s_play_nodes: >-
+      {{ groups.get('k3s_server', []) |
+         union(groups.get('k3s_agent', [])) }}
+
   tasks:
-    - name: Wait for all nodes to register
+    - name: Wait for all reachable nodes to register
       ansible.builtin.command:
-        cmd: /usr/local/bin/k3s kubectl get nodes --no-headers
-      register: registered_nodes
+        argv:
+          - /usr/local/bin/k3s
+          - kubectl
+          - get
+          - node
+          - "{{ item }}"
+          - --no-headers
+      loop: "{{ k3s_play_nodes }}"
+      register: registered_node
       changed_when: false
-      until: registered_nodes.stdout_lines | length >= groups['all'] | length
+      until: registered_node.rc == 0
       retries: 20
       delay: 3
 
-    - name: Wait for all nodes to become ready
+    - name: Wait for all reachable nodes to become ready
       ansible.builtin.command:
-        cmd: >-
-          /usr/local/bin/k3s kubectl wait
-          --for=condition=Ready
-          nodes
-          --all
-          --timeout=180s
+        argv:
+          - /usr/local/bin/k3s
+          - kubectl
+          - wait
+          - --for=condition=Ready
+          - "node/{{ item }}"
+          - --timeout=180s
+      loop: "{{ k3s_play_nodes }}"
       changed_when: false
 
     - name: Read the current sysadmin service nodes
