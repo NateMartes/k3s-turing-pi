@@ -8,6 +8,7 @@ from urllib.parse import quote
 from platform_common import (
     DEFAULT_RANCHER_HOST, current_username, normalize_url, rancher_headers,
     request_json, secure_prompt, require_root, require_hostname,
+    validate_password,
 )
 
 def main():
@@ -30,6 +31,7 @@ def main():
 
     token = args.token or secure_prompt("Rancher admin API token: ")
     password = args.password or os.environ.get("USER_PASSWORD") or secure_prompt(f"New Rancher password for {args.username}: ")
+    validate_password(password)
 
     base = normalize_url(args.hostname)
     headers = rancher_headers(token)

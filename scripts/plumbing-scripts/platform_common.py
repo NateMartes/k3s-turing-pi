@@ -32,6 +32,7 @@ ROOTLESS_APPARMOR_STATE_DIR = Path(
     "/var/lib/k3s-turing-pi/rootless-docker-apparmor-users"
 )
 ROOTLESS_APPARMOR_MARKER = "# Managed by k3s-turing-pi for rootless Docker."
+MIN_PASSWORD_LENGTH = 15
 
 def get_marker(service):
     return MANAGED_MARKER.format(service)
@@ -39,6 +40,13 @@ def get_marker(service):
 def die(message: str, code: int = 1) -> None:
     print(f"ERROR: {message}", file=sys.stderr)
     raise SystemExit(code)
+
+def validate_password(password: str) -> str:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        die(f"Password must be at least {MIN_PASSWORD_LENGTH} characters long.")
+    if not any(character.isupper() for character in password):
+        die("Password must contain at least one uppercase letter.")
+    return password
 
 def require_hostname(value: Optional[str], variable: str) -> str:
     if value:

@@ -6,6 +6,7 @@ from urllib.parse import quote, urlencode
 from platform_common import (
     DEFAULT_HARBOR_HOST, current_username, get_user, harbor_headers,
     normalize_url, request_json, require_hostname, require_root, secure_prompt,
+    validate_password,
 )
 
 
@@ -51,6 +52,7 @@ def main():
     password = args.password or os.environ.get("USER_PASSWORD")
     if not password:
         password = secure_prompt(f"New Harbor password for {args.username}: ")
+    validate_password(password)
     admin_password = args.admin_password or secure_prompt(
         f"Harbor administrator password for {args.admin_username}: "
     )

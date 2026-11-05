@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import pwd
+import queue
 import re
 import secrets
 import shutil
@@ -11,6 +12,8 @@ import socket
 import string
 import subprocess
 import sys
+import threading
+from collections import deque
 from pathlib import Path
 from typing import Optional
 
@@ -28,14 +31,15 @@ DEFAULT_RANCHER_API_KEY = os.getenv("RANCHER_TOKEN")
 DEFAULT_HARBOR_ADMIN_PASSWORD = os.getenv("HARBOR_ADMIN_PASSWORD")
 
 WORDS = (
-    "acacia almond alpine anchor autumn bamboo beacon birchwood blossom bronze "
-    "canyon cedarwood cherry circle citrus cobalt cometary copper crystal desert "
-    "dragon emerald falcon forest galaxy garden glacier golden harbor hazelnut "
-    "island ivorywood jasmine juniper lantern lavender marble meadow meteor mosaic "
-    "nectar oceanic orchid pebble planet quartz rabbit rocket silver spruce summit "
-    "sunrise thunder timber valley velvet violet willow winter zenith"
+    "Acacia Almond Alpine Anchor Autumn Bamboo Beacon Birchwood Blossom Bronze "
+    "Canyon Cedarwood Cherry Circle Citrus Cobalt Cometary Copper Crystal Desert "
+    "Dragon Emerald Falcon Forest Galaxy Garden Glacier Golden Harbor Hazelnut "
+    "Island Ivorywood Jasmine Juniper Lantern Lavender Marble Meadow Meteor Mosaic "
+    "Nectar Oceanic Orchid Pebble Planet Quartz Rabbit Rocket Silver Spruce Summit "
+    "Sunrise Thunder Timber Valley Velvet Violet Willow Winter Zenith"
 ).split()
 SYMBOLS = "!@#$%&*+-_=?"
+MIN_PASSWORD_LENGTH = 15
 
 def die(message: str, code: int = 1):
     print(f"ERROR: {message}", file=sys.stderr)
@@ -77,8 +81,23 @@ def validate_username(username: str) -> str:
 
 
 def generate_password() -> str:
-    # Exactly: <word><symbol><word>, using the secrets module.
-    return f"{secrets.choice(WORDS)}{secrets.choice(SYMBOLS)}{secrets.choice(WORDS)}"
+    # Exactly: <CapitalizedWord><symbol><CapitalizedWord>, using the secrets module.
+    while True:
+        password = (
+            f"{secrets.choice(WORDS)}"
+            f"{secrets.choice(SYMBOLS)}"
+            f"{secrets.choice(WORDS)}"
+        )
+        if len(password) >= MIN_PASSWORD_LENGTH:
+            return password
+
+
+def validate_password(password: str) -> str:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        die(f"Password must be at least {MIN_PASSWORD_LENGTH} characters long.")
+    if not any(character.isupper() for character in password):
+        die("Password must contain at least one uppercase letter.")
+    return password
 
 
 def parse_quota(value: str) -> tuple[int, str]:
@@ -104,13 +123,31 @@ def run(cmd: list[str], *, check=True, capture=False, env=None, input_data=None)
     return subprocess.run(cmd, **kwargs)
 
 
-def _finish_status_line(label: str, success: bool, interactive: bool):
+def _finish_status_line(label: str, success: bool):
     symbol = "✓" if success else "✗"
-    message = f"{symbol} {label}"
-    if interactive:
-        print(f"\r\033[2K{message}")
-    else:
-        print(message)
+    print(f"{symbol} {label}")
+
+
+def _render_live_log_window(label: str, frame: str, lines, rendered: bool):
+    if rendered:
+        print("\033[5A", end="")
+    rows = [f"{frame} {label}"] + [f"│ {line}" for line in lines]
+    rows.extend(["│"] * (5 - len(rows)))
+    for row in rows:
+        print(f"\r\033[2K{row}")
+
+
+def _finish_live_log_window(label: str, success: bool, rendered: bool):
+    if not rendered:
+        _finish_status_line(label, success)
+        return
+    symbol = "✓" if success else "✗"
+    print("\033[5A", end="")
+    rows = [f"{symbol} {label}", "", "", "", ""]
+    for row in rows:
+        print(f"\r\033[2K{row}")
+    # Leave the cursor immediately below the completed status line.
+    print("\033[4A", end="", flush=True)
 
 
 def _print_log_group(label: str, output: str):
@@ -147,28 +184,74 @@ def run_with_loading(
     interactive = sys.stdout.isatty()
     frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
     frame = 0
+    output_lines = []
+    recent_lines = deque(maxlen=4)
+    messages = queue.Queue()
+    rendered = False
+
+    def read_output():
+        for line in process.stdout:
+            messages.put(line)
+        messages.put(None)
+
+    reader = threading.Thread(target=read_output, daemon=True)
+    reader.start()
     if not interactive:
         print(f"… {label}")
 
     try:
+        finished_reading = False
         while True:
             try:
-                output, _ = process.communicate(timeout=0.1)
+                message = messages.get(timeout=0.1)
+                if message is None:
+                    finished_reading = True
+                else:
+                    output_lines.append(message)
+                    recent_lines.append(message.rstrip("\r\n"))
+                while not finished_reading:
+                    try:
+                        message = messages.get_nowait()
+                    except queue.Empty:
+                        break
+                    if message is None:
+                        finished_reading = True
+                    else:
+                        output_lines.append(message)
+                        recent_lines.append(message.rstrip("\r\n"))
+            except queue.Empty:
+                pass
+
+            if interactive and not finished_reading:
+                _render_live_log_window(
+                    label,
+                    frames[frame % len(frames)],
+                    list(recent_lines),
+                    rendered,
+                )
+                rendered = True
+                frame += 1
+            if finished_reading:
                 break
-            except subprocess.TimeoutExpired:
-                if interactive:
-                    print(f"\r\033[2K{frames[frame % len(frames)]} {label}", end="", flush=True)
-                    frame += 1
     except KeyboardInterrupt:
         process.terminate()
         process.wait()
-        if interactive:
-            print("\r\033[2K", end="", flush=True)
+        if interactive and rendered:
+            _finish_live_log_window(label, False, rendered)
         raise
 
+    process.wait()
+    reader.join()
+    output = "".join(output_lines)
     completed = subprocess.CompletedProcess(cmd, process.returncode, output, None)
     success = process.returncode == 0
-    _finish_status_line(label, success, interactive)
+    if interactive:
+        _finish_live_log_window(label, success, rendered)
+    else:
+        if success and recent_lines:
+            for line in recent_lines:
+                print(f"│ {line}")
+        _finish_status_line(label, success)
     if not success:
         _print_log_group(label, output or "")
         if check:
