@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+import argparse
+import os
+from urllib.parse import quote, urlencode
+
+from platform_common import (
+    DEFAULT_HARBOR_HOST, current_username, harbor_headers, normalize_url,
+    request_json, require_hostname, require_root, secure_prompt,
+)
+
+
+def main():
+    require_root()
+    parser = argparse.ArgumentParser(description="Update a user's Harbor project quota.")
+    parser.add_argument("-u", "--username", default=current_username())
+    parser.add_argument("-H", "--hostname", default=DEFAULT_HARBOR_HOST)
+    parser.add_argument("--storage-quota-bytes", type=int, required=True)
+    parser.add_argument(
+        "--admin-username", default=os.environ.get("HARBOR_ADMIN_USERNAME", "admin")
+    )
+    parser.add_argument(
+        "--admin-password", default=os.environ.get("HARBOR_ADMIN_PASSWORD")
+    )
+    args = parser.parse_args()
+    args.hostname = require_hostname(args.hostname, "HARBOR_HOSTNAME")
+    if args.storage_quota_bytes <= 0:
+        parser.error("--storage-quota-bytes must be greater than zero")
+
+    admin_password = args.admin_password or secure_prompt(
+        f"Harbor administrator password for {args.admin_username}: "
+    )
+    base = normalize_url(args.hostname)
+    headers = harbor_headers(args.admin_username, admin_password)
+    project_name = f"{args.username}-namespace"
+    projects = request_json(
+        "GET", f"{base}/api/v2.0/projects?{urlencode({'name': project_name})}",
+        headers=headers, verify=False,
+    )
+    project = next((item for item in projects if item.get("name") == project_name), None)
+    if not project or project.get("project_id") is None:
+        raise SystemExit(f"Harbor project {project_name!r} was not found.")
+
+    quota_query = urlencode({
+        "reference": "project",
+        "reference_id": project["project_id"],
+    })
+    response = request_json(
+        "GET", f"{base}/api/v2.0/quotas?{quota_query}",
+        headers=headers, verify=False,
+    )
+    quotas = response.get("items", [response]) if isinstance(response, dict) else response
+    quota = next(
+        (
+            item for item in quotas
+            if str(item.get("ref", {}).get("id")) == str(project["project_id"])
+        ),
+        None,
+    )
+    if not quota or quota.get("id") is None:
+        raise SystemExit(f"Harbor did not return a storage quota for {project_name!r}.")
+
+    request_json(
+        "PUT", f"{base}/api/v2.0/quotas/{quote(str(quota['id']), safe='')}",
+        headers=headers,
+        json_body={"hard": {"storage": args.storage_quota_bytes}},
+        verify=False,
+    )
+    print(
+        f"Updated {project_name} Harbor quota to "
+        f"{args.storage_quota_bytes} bytes."
+    )
+
+
+if __name__ == "__main__":
+    main()

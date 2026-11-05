@@ -1,30 +1,14 @@
 #!/usr/bin/env python3
 import argparse
 import base64
-from decimal import Decimal, InvalidOperation
 import json
 import os
-import re
 from pathlib import Path
 
+from resource_quantity import resource_quantity
 from platform_common import current_username, get_user, home_path, require_root, run, get_marker, determine_username
 
 MARKER = get_marker("K3s Namespace")
-QUANTITY = re.compile(r"((?:0|[1-9][0-9]*)(?:\.[0-9]+)?)(?:n|u|m|[kKMGTPE]i?)?")
-
-def resource_quantity(value: str) -> str:
-    match = QUANTITY.fullmatch(value)
-    if not match:
-        raise argparse.ArgumentTypeError(
-            "must be a Kubernetes resource quantity, for example 2, 500m, 6Gi, or 10Gi"
-        )
-    try:
-        is_zero = Decimal(match.group(1)) == 0
-    except InvalidOperation:
-        is_zero = True
-    if is_zero:
-        raise argparse.ArgumentTypeError("must be greater than zero")
-    return value
 
 def kubectl(args, *, capture=False, input_data=None):
     env = os.environ.copy()

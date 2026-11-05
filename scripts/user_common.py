@@ -410,6 +410,10 @@ def print_resource_summary(state: dict, *, include_password: Optional[str] = Non
     print(f"Rancher project:      {state.get('rancher_project', '?')}")
     print(f"Harbor account:       {state.get('harbor_user', '?')}")
     print(f"Harbor project:       {state.get('harbor_project', '?')}")
+    print(
+        f"Harbor quota:         "
+        f"{state.get('harbor_storage_quota', '10GB')}"
+    )
     print(f"Portainer account:    {state.get('portainer_user', '?')}")
     print(f"Portainer environment:{' ' if state.get('portainer_environment') else ''}{state.get('portainer_environment', '?')}")
     if include_password is not None:

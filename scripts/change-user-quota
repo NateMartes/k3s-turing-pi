@@ -2,31 +2,115 @@
 import argparse
 
 from user_common import (
-    die, load_state, require_root, save_state, set_quota, user_exists,
-    validate_username,
+    DEFAULT_HARBOR_ADMIN_PASSWORD, DEFAULT_HARBOR_HOST, die, load_state,
+    parse_quota, print_unverified_https_notice, require_hostname, require_root,
+    run_plumbing, save_state, set_quota, user_exists, validate_username,
 )
 
+def prompt_value(label: str, current: str) -> str:
+    return input(f"{label} [{current}]: ").strip() or current
+
+def bytes_as_quota(value: int) -> str:
+    if value > 0 and value % (1024 ** 3) == 0:
+        return f"{value // (1024 ** 3)}GB"
+    if value > 0 and value % (1024 ** 2) == 0:
+        return f"{value // (1024 ** 2)}MB"
+    return "10GB"
+
 def main():
-    p = argparse.ArgumentParser(description="Change a Linux user's filesystem quota.")
-    p.add_argument("quota", help="New quota, e.g. 500MB or 10GB.")
+    p = argparse.ArgumentParser(
+        description="Change a managed user's Linux, K3s, and Harbor quotas."
+    )
+    p.add_argument("quota", nargs="?",
+                   help="Linux quota (legacy positional form), e.g. 10GB.")
     p.add_argument("-u", "--username", required=True)
+    p.add_argument("--linux-quota", default=None)
+    p.add_argument("--k3s-cpu-quota", default=None)
+    p.add_argument("--k3s-memory-quota", default=None)
+    p.add_argument("--k3s-storage-quota", default=None)
+    p.add_argument("--harbor-storage-quota", default=None)
+    p.add_argument("--harbor-host", default=None)
+    p.add_argument("--raw-logs", action="store_true")
     args = p.parse_args()
 
     require_root()
     username = validate_username(args.username)
     if not user_exists(username):
         die(f"Linux user {username!r} does not exist.")
+    if args.quota and args.linux_quota:
+        p.error("Use either the positional quota or --linux-quota, not both.")
 
-    quota_state = set_quota(username, args.quota)
     state = load_state(username)
-    if state:
-        state.update(quota_state)
-        save_state(username, state)
-
-    print(
-        f"Updated {username}'s quota to {quota_state['quota']} "
-        f"on {quota_state['quota_filesystem']}."
+    linux_quota = args.linux_quota or args.quota or prompt_value(
+        "Linux filesystem quota", state.get("quota") or "5GB"
     )
+    cpu_quota = args.k3s_cpu_quota or prompt_value(
+        "K3s CPU quota", state.get("k3s_cpu_quota") or "2"
+    )
+    memory_quota = args.k3s_memory_quota or prompt_value(
+        "K3s memory quota", state.get("k3s_memory_quota") or "6Gi"
+    )
+    storage_quota = args.k3s_storage_quota or prompt_value(
+        "K3s storage quota", state.get("k3s_storage_quota") or "10Gi"
+    )
+    harbor_default = bytes_as_quota(
+        int(state.get("harbor_storage_quota_bytes") or 10 * 1024 ** 3)
+    )
+    harbor_quota = args.harbor_storage_quota or prompt_value(
+        "Harbor storage quota", harbor_default
+    )
+
+    parse_quota(linux_quota)
+    harbor_kib, harbor_normalized = parse_quota(harbor_quota)
+    harbor_bytes = harbor_kib * 1024
+    harbor_host = require_hostname(
+        args.harbor_host or state.get("harbor_host") or DEFAULT_HARBOR_HOST,
+        "HARBOR_HOSTNAME",
+        "--harbor-host or a harbor_host value in the user's state file",
+    )
+    print_unverified_https_notice([("Harbor", harbor_host)])
+
+    run_plumbing(
+        "set-k3s-quota",
+        ["-u", username, "--cpu-quota", cpu_quota,
+         "--memory-quota", memory_quota, "--storage-quota", storage_quota],
+        raw_logs=args.raw_logs,
+        label="Updating K3s namespace quota",
+    )
+    state.update({
+        "k3s_cpu_quota": cpu_quota,
+        "k3s_memory_quota": memory_quota,
+        "k3s_storage_quota": storage_quota,
+    })
+    save_state(username, state)
+
+    harbor_env = (
+        {"HARBOR_ADMIN_PASSWORD": DEFAULT_HARBOR_ADMIN_PASSWORD}
+        if DEFAULT_HARBOR_ADMIN_PASSWORD else None
+    )
+    run_plumbing(
+        "set-harbor-quota",
+        ["-u", username, "-H", harbor_host,
+         "--storage-quota-bytes", str(harbor_bytes)],
+        extra_env=harbor_env,
+        raw_logs=args.raw_logs,
+        label="Updating Harbor project quota",
+    )
+    state.update({
+        "harbor_host": harbor_host,
+        "harbor_storage_quota": harbor_normalized,
+        "harbor_storage_quota_bytes": harbor_bytes,
+    })
+    save_state(username, state)
+
+    quota_state = set_quota(username, linux_quota)
+    state.update(quota_state)
+    save_state(username, state)
+
+    print("\nUpdated quotas")
+    print(f"Linux:  {quota_state['quota']} on {quota_state['quota_filesystem']}")
+    print(f"K3s:    CPU {cpu_quota}, memory {memory_quota}, storage {storage_quota}")
+    print(f"Harbor: {harbor_normalized}")
 
 if __name__ == "__main__":
     main()

@@ -149,11 +149,15 @@ sudo ./disable-quotas /home
 
 ### `change-user-quota`
 
-Changes the Linux filesystem quota for a managed user.
+Prompts for every managed quota, using the current stored values as defaults:
 
-- Finds the filesystem containing the user's home directory.
-- Applies the requested user quota using `setquota`.
-- Updates the user's local state file.
+- Linux filesystem storage
+- K3s CPU, memory, and storage
+- Harbor project storage
+
+It updates each service and records successful changes in the user's state
+file. The legacy positional value still sets the Linux quota, while the other
+values are prompted.
 
 ```bash
 sudo ./user-scripts/change-user-quota 10GB -u bob
@@ -162,6 +166,19 @@ sudo ./user-scripts/change-user-quota 10GB -u bob
 ```bash
 sudo ./user-scripts/change-user-quota 500MB -u bob
 ```
+
+For a fully non-interactive update:
+
+```bash
+sudo ./user-scripts/change-user-quota -u bob \
+  --linux-quota 10GB \
+  --k3s-cpu-quota 4 \
+  --k3s-memory-quota 12Gi \
+  --k3s-storage-quota 20Gi \
+  --harbor-storage-quota 20GB
+```
+
+Use `--raw-logs` to stream the K3s and Harbor command output.
 
 ## Plumbing Commands
 
@@ -243,6 +260,15 @@ sudo ./plumbing-scripts/uninstall-k3s-namespace -u bob
 
 Deleting the namespace also deletes namespaced Kubernetes resources inside it.
 
+### `set-k3s-quota`
+
+Updates only the managed `ResourceQuota` in an existing user's namespace.
+
+```bash
+sudo ./plumbing-scripts/set-k3s-quota -u bob \
+  --cpu-quota 4 --memory-quota 12Gi --storage-quota 20Gi
+```
+
 ### `install-harbor-account`
 
 Creates a local Harbor user and a private Harbor project named
@@ -261,6 +287,15 @@ configured to use LDAP, AD, or OIDC for user authentication.
 
 Each managed Harbor namespace project receives a 10GiB (10,737,418,240-byte)
 storage quota by default. Use `--storage-quota-bytes` to override it.
+
+### `set-harbor-quota`
+
+Updates only an existing managed Harbor project's storage quota.
+
+```bash
+sudo ./plumbing-scripts/set-harbor-quota -u bob \
+  --storage-quota-bytes 21474836480
+```
 
 ### `uninstall-harbor-account`
 
