@@ -76,7 +76,6 @@ def main():
                 "password": password,
                 "email": args.email or f"{username}@local.invalid",
                 "realname": username,
-                "comment": f"Managed Harbor account for Linux user {username}",
             },
             verify=verify,
         )
