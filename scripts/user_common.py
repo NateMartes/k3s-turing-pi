@@ -54,6 +54,21 @@ def require_hostname(value: Optional[str], variable: str, option: str) -> str:
     )
 
 
+def print_unverified_https_notice(services: list[tuple[str, str]]) -> None:
+    endpoints = []
+    for service, host in services:
+        endpoint = host.rstrip("/")
+        if "://" not in endpoint:
+            endpoint = f"https://{endpoint}"
+        if endpoint.lower().startswith("https://"):
+            endpoints.append(f"{service} ({endpoint})")
+    if endpoints:
+        print(
+            "WARNING: TLS certificate verification is disabled for: "
+            + ", ".join(endpoints)
+        )
+
+
 def require_root():
     if os.geteuid() != 0:
         die("This command manages system accounts and must be run with sudo/root.")
@@ -81,11 +96,12 @@ def validate_username(username: str) -> str:
 
 
 def generate_password() -> str:
-    # Exactly: <CapitalizedWord><symbol><CapitalizedWord>, using the secrets module.
+    # Exactly: <CapitalizedWord><symbol><digit><CapitalizedWord>, using secrets.
     while True:
         password = (
             f"{secrets.choice(WORDS)}"
             f"{secrets.choice(SYMBOLS)}"
+            f"{secrets.choice(string.digits)}"
             f"{secrets.choice(WORDS)}"
         )
         if len(password) >= MIN_PASSWORD_LENGTH:

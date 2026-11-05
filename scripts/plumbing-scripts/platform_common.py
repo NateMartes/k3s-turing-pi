@@ -11,6 +11,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -312,16 +313,23 @@ def request_json(
         import requests
     except ImportError:
         die("Python package 'requests' is required. Install it with: sudo apt install python3-requests")
-    resp = requests.request(
-        method,
-        url,
-        headers=headers,
-        json=json_body,
-        data=form,
-        files=files,
-        verify=verify,
-        timeout=timeout,
-    )
+    with warnings.catch_warnings():
+        if not verify:
+            try:
+                from urllib3.exceptions import InsecureRequestWarning
+            except ImportError:
+                InsecureRequestWarning = Warning
+            warnings.simplefilter("ignore", InsecureRequestWarning)
+        resp = requests.request(
+            method,
+            url,
+            headers=headers,
+            json=json_body,
+            data=form,
+            files=files,
+            verify=verify,
+            timeout=timeout,
+        )
     if not resp.ok:
         detail = resp.text.strip()
         die(f"{method} {url} failed with HTTP {resp.status_code}: {detail}")

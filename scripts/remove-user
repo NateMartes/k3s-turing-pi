@@ -11,7 +11,7 @@ from user_common import (
     home_for, load_state,
     remove_state, require_root, run, run_plumbing, state_path, user_exists,
     validate_username, DEFAULT_HARBOR_ADMIN_PASSWORD, DEFAULT_PORTAINER_API_KEY,
-    DEFAULT_RANCHER_API_KEY, require_hostname,
+    DEFAULT_RANCHER_API_KEY, require_hostname, print_unverified_https_notice,
 )
 
 def yes(prompt: str) -> bool:
@@ -52,6 +52,11 @@ def main():
         "PORTAINER_HOSTNAME",
         "a portainer_host value in the user's state file",
     )
+    print_unverified_https_notice([
+        ("Harbor", harbor_host),
+        ("Rancher", rancher_host),
+        ("Portainer", portainer_host),
+    ])
     cluster_id = state.get("cluster_id") or os.environ.get("RANCHER_CLUSTER_ID")
     agent_port = state.get("agent_port", "?")
 

@@ -10,7 +10,7 @@ from user_common import (
     die, generate_password, print_resource_summary, require_root, run, run_plumbing,
     save_state, set_quota, state_path, user_exists, validate_username, require_hostname,
     DEFAULT_HARBOR_ADMIN_PASSWORD, DEFAULT_PORTAINER_API_KEY,
-    DEFAULT_RANCHER_API_KEY,
+    DEFAULT_RANCHER_API_KEY, print_unverified_https_notice,
 )
 
 def main():
@@ -52,6 +52,11 @@ def main():
     args.portainer_host = require_hostname(
         args.portainer_host, "PORTAINER_HOSTNAME", "--portainer-host"
     )
+    print_unverified_https_notice([
+        ("Harbor", args.harbor_host),
+        ("Rancher", args.rancher_host),
+        ("Portainer", args.portainer_host),
+    ])
     username = validate_username(args.username)
     if user_exists(username):
         die(f"Linux user {username!r} already exists.")
