@@ -5,15 +5,20 @@ import pwd
 from pathlib import Path
 
 from user_common import (
-    DEFAULT_PORTAINER_HOST, DEFAULT_RANCHER_HOST, agent_address, choose_agent_port,
+    DEFAULT_HARBOR_HOST, DEFAULT_PORTAINER_HOST, DEFAULT_RANCHER_HOST,
+    agent_address, choose_agent_port,
     die, generate_password, print_resource_summary, require_root, run, run_plumbing,
     save_state, set_quota, state_path, user_exists, validate_username, require_hostname,
-    DEFAULT_PORTAINER_API_KEY, DEFAULT_RANCHER_API_KEY,
+    DEFAULT_HARBOR_ADMIN_PASSWORD, DEFAULT_PORTAINER_API_KEY,
+    DEFAULT_RANCHER_API_KEY,
 )
 
 def main():
     p = argparse.ArgumentParser(
-        description="Create a Linux user and provision their Docker/K3s/Rancher/Portainer resources."
+        description=(
+            "Create a Linux user and provision their "
+            "Docker/K3s/Harbor/Rancher/Portainer resources."
+        )
     )
     p.add_argument("-u", "--username", required=True)
     p.add_argument("-q", "--quota", default=None, help="Filesystem quota, e.g. 5GB or 500MB.")
@@ -24,17 +29,25 @@ def main():
     p.add_argument("--k3s-storage-quota", default=None,
                    help="K3s namespace persistent and ephemeral storage quota. Default: 10Gi.")
     p.add_argument("--rancher-host", default=DEFAULT_RANCHER_HOST)
+    p.add_argument("--harbor-host", default=DEFAULT_HARBOR_HOST)
     p.add_argument("--portainer-host", default=DEFAULT_PORTAINER_HOST)
     p.add_argument("--cluster-id", default="local")
     p.add_argument("--agent-port", type=int, default=None)
     p.add_argument("--agent-address", default=None,
                    help="Address Portainer can use to reach this user's agent; defaults to this host FQDN:port.")
     p.add_argument("--shell", default="/bin/bash")
+    p.add_argument(
+        "--raw-logs", action="store_true",
+        help="Stream all plumbing command output instead of using compact status lines.",
+    )
     args = p.parse_args()
 
     require_root()
     args.rancher_host = require_hostname(
         args.rancher_host, "RANCHER_HOSTNAME", "--rancher-host"
+    )
+    args.harbor_host = require_hostname(
+        args.harbor_host, "HARBOR_HOSTNAME", "--harbor-host"
     )
     args.portainer_host = require_hostname(
         args.portainer_host, "PORTAINER_HOSTNAME", "--portainer-host"
@@ -61,6 +74,7 @@ def main():
         "username": username,
         "quota": quota,
         "rancher_host": args.rancher_host,
+        "harbor_host": args.harbor_host,
         "portainer_host": args.portainer_host,
         "cluster_id": args.cluster_id,
         "agent_port": agent_port,
@@ -71,6 +85,9 @@ def main():
         "k3s_storage_quota": k3s_storage_quota,
         "rancher_user": username,
         "rancher_project": f"{username}-project",
+        "harbor_user": username,
+        "harbor_project": f"{username}-namespace",
+        "harbor_storage_quota_bytes": 10 * 1024 * 1024 * 1024,
         "portainer_user": username,
         "portainer_environment": f"{username}-docker",
         "docker_rootless": False,
@@ -89,22 +106,28 @@ def main():
         state.update(set_quota(username, quota))
         save_state(username, state)
 
-        print("\n[1/5] Installing rootless Docker")
-        run_plumbing("install-docker-rootless", ["-u", username])
+        print("\n[1/6] Installing rootless Docker")
+        run_plumbing(
+            "install-docker-rootless", ["-u", username],
+            raw_logs=args.raw_logs, label="Installing rootless Docker",
+        )
         state["docker_rootless"] = True
         save_state(username, state)
 
-        print("\n[2/5] Installing Portainer Agent")
+        print("\n[2/6] Installing Portainer Agent")
         agent_args = [
             "-u", username,
             "-H", args.portainer_host,
             "--port", str(agent_port),
         ]
-        run_plumbing("install-portainer-agent", agent_args)
+        run_plumbing(
+            "install-portainer-agent", agent_args,
+            raw_logs=args.raw_logs, label="Starting Portainer Agent",
+        )
         state["portainer_agent"] = True
         save_state(username, state)
 
-        print("\n[3/5] Creating K3s namespace")
+        print("\n[3/6] Creating K3s namespace")
         run_plumbing(
             "install-k3s-namespace",
             [
@@ -113,11 +136,31 @@ def main():
                 "--memory-quota", k3s_memory_quota,
                 "--storage-quota", k3s_storage_quota,
             ],
+            raw_logs=args.raw_logs,
+            label="Creating K3s namespace",
         )
         state["k3s_namespace"] = True
         save_state(username, state)
 
-        print("\n[4/5] Creating Rancher account/project")
+        print("\n[4/6] Creating Harbor account/project")
+        run_plumbing(
+            "install-harbor-account",
+            ["-u", username, "-H", args.harbor_host],
+            extra_env={
+                "USER_PASSWORD": password,
+                **(
+                    {"HARBOR_ADMIN_PASSWORD": DEFAULT_HARBOR_ADMIN_PASSWORD}
+                    if DEFAULT_HARBOR_ADMIN_PASSWORD
+                    else {}
+                ),
+            },
+            raw_logs=args.raw_logs,
+            label="Creating Harbor account and project",
+        )
+        state["harbor_account"] = True
+        save_state(username, state)
+
+        print("\n[5/6] Creating Rancher account/project")
         rancher_args = ["-u", username, "-H", args.rancher_host]
         if args.cluster_id:
             rancher_args += ["--cluster-id", args.cluster_id]
@@ -128,11 +171,13 @@ def main():
                 "USER_PASSWORD": password, 
                 "RANCHER_TOKEN": DEFAULT_RANCHER_API_KEY
             },
+            raw_logs=args.raw_logs,
+            label="Creating Rancher account and project",
         )
         state["rancher_account"] = True
         save_state(username, state)
 
-        print("\n[5/5] Creating Portainer account/environment")
+        print("\n[6/6] Creating Portainer account/environment")
         portainer_args = [
             "-u", username,
             "-H", args.portainer_host,
@@ -146,6 +191,8 @@ def main():
                 "USER_PASSWORD": password,
                 "PORTAINER_API_KEY": DEFAULT_PORTAINER_API_KEY
             },
+            raw_logs=args.raw_logs,
+            label="Creating Portainer account and environment",
         )
         state["portainer_account"] = True
         save_state(username, state)

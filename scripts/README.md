@@ -4,7 +4,7 @@ This repository contains two layers of administration tools:
 
 - **`user-scripts/`** — the main commands an administrator normally uses.
 - **`plumbing-scripts/`** — lower-level commands used by the main commands to
-  configure Docker, Portainer, K3s, and Rancher.
+  configure Docker, Portainer, K3s, Harbor, and Rancher.
 
 Per-user state is stored locally beside the main scripts:
 
@@ -30,6 +30,7 @@ Creates a complete managed user.
 
 - Uses the same password for:
   - Linux
+  - Harbor
   - Rancher
   - Portainer
 - Applies the requested filesystem quota.
@@ -38,6 +39,8 @@ Creates a complete managed user.
 - Installs rootless Docker for the user.
 - Starts a Portainer Agent connected to that user's rootless Docker socket.
 - Creates `<username>-namespace` in K3s.
+- Creates the user's Harbor account and private `<username>-namespace` project
+  with a 10GiB storage quota.
 - Creates the user's Rancher account and project.
 - Adds the user's namespace to the Rancher project.
 - Creates the user's Portainer account.
@@ -46,6 +49,14 @@ Creates a complete managed user.
 
 ```bash
 sudo ./user-scripts/create-user -u bob -q 5GB
+```
+
+By default, plumbing output is collapsed behind live per-stage status lines.
+If a stage fails, its output is printed as a labeled log block. To stream all
+command output as it happens, use `--raw-logs`:
+
+```bash
+sudo ./user-scripts/create-user -u bob -q 5GB --raw-logs
 ```
 
 The K3s resource quotas can also be supplied non-interactively:
@@ -65,6 +76,7 @@ It removes, in reverse provisioning order:
 
 - Portainer account and environment
 - Rancher project and Rancher account
+- Harbor project and Harbor account
 - K3s namespace and namespace resources
 - Portainer Agent
 - Rootless Docker
@@ -87,6 +99,9 @@ For non-interactive removal:
 ```bash
 sudo ./user-scripts/remove-user -u bob --yes
 ```
+
+Removal uses the same compact status display and supports `--raw-logs` for
+unfiltered command output.
 
 ### `change-user-password`
 
@@ -412,10 +427,11 @@ They record resource information such as:
 - Linux username and home directory
 - quota
 - K3s namespace
+- Harbor project and storage quota
 - Rancher project
 - Portainer environment
 - Portainer Agent port and address
-- Rancher and Portainer hostnames
+- Harbor, Rancher, and Portainer hostnames
 
 They do **not** contain passwords.
 

@@ -22,8 +22,10 @@ load_sysadmin_env_or_exit()
 STATE_ROOT = Path(__file__).resolve().parent / "state"
 DEFAULT_RANCHER_HOST = os.getenv("RANCHER_HOSTNAME")
 DEFAULT_PORTAINER_HOST = os.getenv("PORTAINER_HOSTNAME")
+DEFAULT_HARBOR_HOST = os.getenv("HARBOR_HOSTNAME")
 DEFAULT_PORTAINER_API_KEY = os.getenv("PORTAINER_API_KEY")
 DEFAULT_RANCHER_API_KEY = os.getenv("RANCHER_TOKEN")
+DEFAULT_HARBOR_ADMIN_PASSWORD = os.getenv("HARBOR_ADMIN_PASSWORD")
 
 WORDS = (
     "acacia almond alpine anchor autumn bamboo beacon birchwood blossom bronze "
@@ -102,18 +104,108 @@ def run(cmd: list[str], *, check=True, capture=False, env=None, input_data=None)
     return subprocess.run(cmd, **kwargs)
 
 
+def _finish_status_line(label: str, success: bool, interactive: bool):
+    symbol = "✓" if success else "✗"
+    message = f"{symbol} {label}"
+    if interactive:
+        print(f"\r\033[2K{message}")
+    else:
+        print(message)
+
+
+def _print_log_group(label: str, output: str):
+    print(f"┌─ {label} logs")
+    if output.strip():
+        for line in output.rstrip().splitlines():
+            print(f"│ {line}")
+    else:
+        print("│ (no command output)")
+    print("└─")
+
+
+def run_with_loading(
+    cmd: list[str],
+    *,
+    label: str,
+    raw_logs: bool = False,
+    check: bool = True,
+    env=None,
+):
+    """Run a command with a compact spinner, showing grouped output on failure."""
+    if raw_logs:
+        print(f"==> {label}")
+        return run(cmd, check=check, env=env)
+
+    process = subprocess.Popen(
+        cmd,
+        text=True,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+    interactive = sys.stdout.isatty()
+    frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    frame = 0
+    if not interactive:
+        print(f"… {label}")
+
+    try:
+        while True:
+            try:
+                output, _ = process.communicate(timeout=0.1)
+                break
+            except subprocess.TimeoutExpired:
+                if interactive:
+                    print(f"\r\033[2K{frames[frame % len(frames)]} {label}", end="", flush=True)
+                    frame += 1
+    except KeyboardInterrupt:
+        process.terminate()
+        process.wait()
+        if interactive:
+            print("\r\033[2K", end="", flush=True)
+        raise
+
+    completed = subprocess.CompletedProcess(cmd, process.returncode, output, None)
+    success = process.returncode == 0
+    _finish_status_line(label, success, interactive)
+    if not success:
+        _print_log_group(label, output or "")
+        if check:
+            raise subprocess.CalledProcessError(
+                process.returncode,
+                cmd,
+                output=output,
+            )
+    return completed
+
+
 def plumbing_dir() -> Path:
     return Path(__file__).resolve().parent / "plumbing-scripts"
 
 
-def run_plumbing(name: str, args: list[str], *, extra_env: Optional[dict[str, str]] = None, check=True):
+def run_plumbing(
+    name: str,
+    args: list[str],
+    *,
+    extra_env: Optional[dict[str, str]] = None,
+    check=True,
+    raw_logs: bool = False,
+    label: Optional[str] = None,
+):
     script = plumbing_dir() / name
     if not script.exists():
         die(f"Plumbing script not found: {script}")
     env = os.environ.copy()
     if extra_env:
         env.update(extra_env)
-    return run([str(script), *args], check=check, env=env)
+    return run_with_loading(
+        [str(script), *args],
+        label=label or name.replace("-", " ").capitalize(),
+        raw_logs=raw_logs,
+        check=check,
+        env=env,
+    )
 
 
 def state_path(username: str) -> Path:
@@ -217,6 +309,8 @@ def print_resource_summary(state: dict, *, include_password: Optional[str] = Non
     )
     print(f"Rancher account:      {state.get('rancher_user', '?')}")
     print(f"Rancher project:      {state.get('rancher_project', '?')}")
+    print(f"Harbor account:       {state.get('harbor_user', '?')}")
+    print(f"Harbor project:       {state.get('harbor_project', '?')}")
     print(f"Portainer account:    {state.get('portainer_user', '?')}")
     print(f"Portainer environment:{' ' if state.get('portainer_environment') else ''}{state.get('portainer_environment', '?')}")
     if include_password is not None:
