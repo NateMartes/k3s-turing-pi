@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 from platform_common import (
+    cleanup_rootless_docker_apparmor,
     die,
     get_marker,
     get_user,
@@ -254,6 +255,7 @@ def main() -> None:
     remove_user_binaries(username)
     remove_profile_configuration(username)
     remove_runtime_socket(username)
+    cleanup_rootless_docker_apparmor(username)
 
     if args.purge_data:
         info("Removing Docker data")

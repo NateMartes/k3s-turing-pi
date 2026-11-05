@@ -9,6 +9,7 @@ from pathlib import Path
 from platform_common import (
     die,
     docker_socket,
+    ensure_rootless_docker_apparmor,
     get_marker,
     get_user,
     home_path,
@@ -224,6 +225,13 @@ def configure_rootless_docker(username: str) -> None:
 
         # The setup tool may report that Docker is already installed.
         if "already" not in output.lower():
+            if "apparmor" in output.lower():
+                die(
+                    f"{output}\n\n"
+                    "Rootless Docker was blocked by AppArmor. Verify that "
+                    "kernel.apparmor_restrict_unprivileged_userns is 0; "
+                    "this installer manages that setting when the kernel exposes it."
+                )
             die(output)
 
 
@@ -307,6 +315,7 @@ def main() -> None:
 
     ensure_prereqs()
     ensure_subids(username)
+    ensure_rootless_docker_apparmor(username)
 
     # Do this before invoking Docker's rootless installer so the user's
     # XDG_RUNTIME_DIR and systemd user bus exist.

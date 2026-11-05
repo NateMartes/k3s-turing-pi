@@ -147,6 +147,12 @@ These commands are normally called automatically by the main user scripts.
 
 Installs and configures rootless Docker for a Linux user.
 
+On hosts where AppArmor blocks unprivileged user namespaces, it creates the
+managed `/etc/sysctl.d/90-k3s-turing-pi-rootless-docker-apparmor.conf` override
+required by rootless Docker. The override is reference-counted across managed
+users and is removed (with the original restriction restored) when the final
+managed rootless Docker user is removed.
+
 ```bash
 sudo ./plumbing-scripts/install-docker-rootless -u bob
 ```

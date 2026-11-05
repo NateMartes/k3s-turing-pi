@@ -24,6 +24,14 @@ MANAGED_MARKER = "# Managed by sysadmin. Created by {}"
 DEFAULT_RANCHER_HOST = os.environ.get("RANCHER_HOSTNAME")
 DEFAULT_PORTAINER_HOST = os.environ.get("PORTAINER_HOSTNAME")
 DEFAULT_HARBOR_HOST = os.environ.get("HARBOR_HOSTNAME")
+ROOTLESS_APPARMOR_SYSCTL = "kernel.apparmor_restrict_unprivileged_userns"
+ROOTLESS_APPARMOR_CONFIG = Path(
+    "/etc/sysctl.d/90-k3s-turing-pi-rootless-docker-apparmor.conf"
+)
+ROOTLESS_APPARMOR_STATE_DIR = Path(
+    "/var/lib/k3s-turing-pi/rootless-docker-apparmor-users"
+)
+ROOTLESS_APPARMOR_MARKER = "# Managed by k3s-turing-pi for rootless Docker."
 
 def get_marker(service):
     return MANAGED_MARKER.format(service)
@@ -41,6 +49,86 @@ def require_hostname(value: Optional[str], variable: str) -> str:
 
 def info(message: str) -> None:
     print(f"==> {message}")
+
+def _read_sysctl(name: str) -> str | None:
+    result = run(["sysctl", "-n", name], check=False, capture=True)
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+def _is_managed_rootless_apparmor_config() -> bool:
+    try:
+        return ROOTLESS_APPARMOR_MARKER in ROOTLESS_APPARMOR_CONFIG.read_text()
+    except FileNotFoundError:
+        return False
+
+def ensure_rootless_docker_apparmor(username: str) -> None:
+    """Allow rootless Docker's unprivileged user namespace when AppArmor blocks it."""
+    current = _read_sysctl(ROOTLESS_APPARMOR_SYSCTL)
+    managed = _is_managed_rootless_apparmor_config()
+
+    if current is None:
+        info("AppArmor user-namespace restriction is unavailable; no rootless Docker change is needed.")
+        return
+
+    if current != "1" and not managed:
+        info("AppArmor already permits unprivileged user namespaces for rootless Docker.")
+        return
+
+    if not managed:
+        if ROOTLESS_APPARMOR_CONFIG.exists():
+            die(
+                f"Refusing to overwrite {ROOTLESS_APPARMOR_CONFIG}; configure "
+                f"{ROOTLESS_APPARMOR_SYSCTL}=0 manually for rootless Docker."
+            )
+        info("Allowing unprivileged user namespaces required by rootless Docker")
+        ROOTLESS_APPARMOR_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        ROOTLESS_APPARMOR_CONFIG.write_text(
+            f"{ROOTLESS_APPARMOR_MARKER}\n"
+            "# This value was 1 before this tool enabled rootless Docker.\n"
+            f"{ROOTLESS_APPARMOR_SYSCTL} = 0\n"
+        )
+        os.chmod(ROOTLESS_APPARMOR_CONFIG, 0o644)
+        run(["sysctl", "-p", str(ROOTLESS_APPARMOR_CONFIG)])
+    elif current != "0":
+        # Reapply our managed setting after a reboot or manual sysctl reload.
+        run(["sysctl", "-p", str(ROOTLESS_APPARMOR_CONFIG)])
+
+    if _read_sysctl(ROOTLESS_APPARMOR_SYSCTL) != "0":
+        die(
+            f"Could not set {ROOTLESS_APPARMOR_SYSCTL}=0; rootless Docker "
+            "would be blocked by AppArmor."
+        )
+
+    ROOTLESS_APPARMOR_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(ROOTLESS_APPARMOR_STATE_DIR, 0o700)
+    (ROOTLESS_APPARMOR_STATE_DIR / username).touch()
+
+def cleanup_rootless_docker_apparmor(username: str) -> None:
+    """Remove a user's AppArmor reference and restore the sysctl after the last user."""
+    marker = ROOTLESS_APPARMOR_STATE_DIR / username
+    marker.unlink(missing_ok=True)
+
+    try:
+        remaining = list(ROOTLESS_APPARMOR_STATE_DIR.iterdir())
+    except FileNotFoundError:
+        return
+    if remaining:
+        return
+
+    try:
+        ROOTLESS_APPARMOR_STATE_DIR.rmdir()
+    except OSError:
+        return
+
+    if not _is_managed_rootless_apparmor_config():
+        return
+
+    info("Restoring AppArmor user-namespace restriction after rootless Docker cleanup")
+    ROOTLESS_APPARMOR_CONFIG.unlink()
+    # The managed configuration is only created when the previous runtime value
+    # was 1, so this restores the state that the installer changed.
+    run(["sysctl", "-w", f"{ROOTLESS_APPARMOR_SYSCTL}=1"], check=False)
 
 def current_username() -> str:
     return pwd.getpwuid(os.getuid()).pw_name
