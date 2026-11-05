@@ -110,9 +110,13 @@ def main():
     if not project or project.get("project_id") is None:
         raise SystemExit(f"Harbor did not return a project ID for {project_name!r}.")
 
+    quota_query = urlencode({
+        "reference": "project",
+        "reference_id": project["project_id"],
+    })
     quota_response = request_json(
         "GET",
-        f"{base}/api/v2.0/quotas?{urlencode({'reference': project['project_id']})}",
+        f"{base}/api/v2.0/quotas?{quota_query}",
         headers=headers,
         verify=verify,
     )
