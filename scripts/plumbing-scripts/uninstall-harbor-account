@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+import argparse
+import os
+from urllib.parse import quote, urlencode
+
+from platform_common import (
+    DEFAULT_HARBOR_HOST, current_username, get_user, harbor_headers,
+    normalize_url, request_json, require_hostname, require_root, secure_prompt,
+)
+
+
+def main():
+    """Delete a managed Harbor project (including artifacts) and its local account."""
+    require_root()
+    parser = argparse.ArgumentParser(
+        description="Remove a user's private Harbor <user>-namespace project and local account."
+    )
+    parser.add_argument("-u", "--username", default=current_username())
+    parser.add_argument("-H", "--hostname", default=DEFAULT_HARBOR_HOST)
+    parser.add_argument(
+        "--admin-username", default=os.environ.get("HARBOR_ADMIN_USERNAME", "admin"),
+        help="Harbor administrator username. Defaults to admin or HARBOR_ADMIN_USERNAME.",
+    )
+    parser.add_argument(
+        "--admin-password", default=os.environ.get("HARBOR_ADMIN_PASSWORD"),
+        help="Harbor administrator password. Prefer HARBOR_ADMIN_PASSWORD.",
+    )
+    parser.add_argument(
+        "--keep-project", action="store_true",
+        help="Delete only the account, leaving <user>-namespace and its artifacts.",
+    )
+    args = parser.parse_args()
+    args.hostname = require_hostname(args.hostname, "HARBOR_HOSTNAME")
+
+    get_user(args.username)
+    admin_password = args.admin_password or secure_prompt(
+        f"Harbor administrator password for {args.admin_username}: "
+    )
+    base = normalize_url(args.hostname)
+    headers = harbor_headers(args.admin_username, admin_password)
+    verify = False
+    username = args.username
+    project_name = f"{username}-namespace"
+
+    if not args.keep_project:
+        projects = request_json(
+            "GET", f"{base}/api/v2.0/projects?{urlencode({'name': project_name})}",
+            headers=headers, verify=verify,
+        )
+        project = next((item for item in projects if item.get("name") == project_name), None)
+        if project:
+            request_json(
+                "DELETE",
+                f"{base}/api/v2.0/projects/{quote(project_name, safe='')}?force=true",
+                headers=headers, verify=verify,
+            )
+            print(f"Deleted Harbor namespace project {project_name} and its artifacts.")
+        else:
+            print(f"Harbor namespace project {project_name} was not found.")
+
+    users = request_json(
+        "GET", f"{base}/api/v2.0/users?{urlencode({'username': username})}",
+        headers=headers, verify=verify,
+    )
+    user = next((item for item in users if item.get("username") == username), None)
+    if not user:
+        print(f"Harbor user {username} was not found.")
+        return
+    if user.get("sysadmin_flag"):
+        raise SystemExit(
+            f"Refusing to delete Harbor system administrator {username!r}."
+        )
+
+    user_id = user.get("user_id")
+    if user_id is None:
+        raise SystemExit(f"Harbor did not return a user ID for {username!r}.")
+    request_json(
+        "DELETE", f"{base}/api/v2.0/users/{quote(str(user_id), safe='')}",
+        headers=headers, verify=verify,
+    )
+    print(f"Deleted Harbor user {username}.")
+
+
+if __name__ == "__main__":
+    main()

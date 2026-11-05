@@ -1,13 +1,30 @@
 #!/usr/bin/env python3
 import argparse
 import base64
+from decimal import Decimal, InvalidOperation
 import json
 import os
+import re
 from pathlib import Path
 
 from platform_common import current_username, get_user, home_path, require_root, run, get_marker, determine_username
 
 MARKER = get_marker("K3s Namespace")
+QUANTITY = re.compile(r"((?:0|[1-9][0-9]*)(?:\.[0-9]+)?)(?:n|u|m|[kKMGTPE]i?)?")
+
+def resource_quantity(value: str) -> str:
+    match = QUANTITY.fullmatch(value)
+    if not match:
+        raise argparse.ArgumentTypeError(
+            "must be a Kubernetes resource quantity, for example 2, 500m, 6Gi, or 10Gi"
+        )
+    try:
+        is_zero = Decimal(match.group(1)) == 0
+    except InvalidOperation:
+        is_zero = True
+    if is_zero:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return value
 
 def kubectl(args, *, capture=False, input_data=None):
     env = os.environ.copy()
@@ -18,6 +35,12 @@ def kubectl(args, *, capture=False, input_data=None):
 def main():
     p = argparse.ArgumentParser(description="Create a private K3s namespace and per-user kubeconfig.")
     p.add_argument("-u", "--username", default=current_username())
+    p.add_argument("--cpu-quota", type=resource_quantity, default="2",
+                   help="Namespace total CPU requests and limits. Default: 2.")
+    p.add_argument("--memory-quota", type=resource_quantity, default="6Gi",
+                   help="Namespace total memory requests and limits. Default: 6Gi.")
+    p.add_argument("--storage-quota", type=resource_quantity, default="10Gi",
+                   help="Namespace persistent and ephemeral storage quota. Default: 10Gi.")
     args = p.parse_args()
 
     require_root()
@@ -28,6 +51,23 @@ def main():
 
     run(["kubectl", "create", "namespace", namespace], check=False)
     run(["kubectl", "-n", namespace, "create", "serviceaccount", sa], check=False)
+
+    quota = f"""apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {username}-namespace-quota
+  namespace: {namespace}
+spec:
+  hard:
+    requests.cpu: {args.cpu_quota}
+    limits.cpu: {args.cpu_quota}
+    requests.memory: {args.memory_quota}
+    limits.memory: {args.memory_quota}
+    requests.storage: {args.storage_quota}
+    requests.ephemeral-storage: {args.storage_quota}
+    limits.ephemeral-storage: {args.storage_quota}
+"""
+    kubectl(["apply", "-f", "-"], input_data=quota)
 
     rb = f"""apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -102,6 +142,10 @@ users:
     os.chown(kube_dir / MARKER, u.pw_uid, u.pw_gid)
 
     print(f"Created namespace: {namespace}")
+    print(
+        "Applied resource quota: "
+        f"CPU {args.cpu_quota}, memory {args.memory_quota}, storage {args.storage_quota}."
+    )
     print(f"Created kubeconfig: {config_path}")
     print("This kubeconfig authenticates as a namespace-scoped service account.")
     print("Cluster administrators still retain cluster-wide access.")

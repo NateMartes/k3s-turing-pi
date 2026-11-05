@@ -209,6 +209,12 @@ def print_resource_summary(state: dict, *, include_password: Optional[str] = Non
     if state.get("portainer_agent"):
         print(f"Agent address:        {state.get('agent_address', '?')}")
     print(f"K3s namespace:        {state.get('namespace', '?')}")
+    print(
+        "K3s quota:            "
+        f"CPU {state.get('k3s_cpu_quota', '?')}, "
+        f"memory {state.get('k3s_memory_quota', '?')}, "
+        f"storage {state.get('k3s_storage_quota', '?')}"
+    )
     print(f"Rancher account:      {state.get('rancher_user', '?')}")
     print(f"Rancher project:      {state.get('rancher_project', '?')}")
     print(f"Portainer account:    {state.get('portainer_user', '?')}")

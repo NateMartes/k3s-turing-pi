@@ -17,6 +17,12 @@ def main():
     )
     p.add_argument("-u", "--username", required=True)
     p.add_argument("-q", "--quota", default=None, help="Filesystem quota, e.g. 5GB or 500MB.")
+    p.add_argument("--k3s-cpu-quota", default=None,
+                   help="K3s namespace CPU quota. Default: 2.")
+    p.add_argument("--k3s-memory-quota", default=None,
+                   help="K3s namespace memory quota. Default: 6Gi.")
+    p.add_argument("--k3s-storage-quota", default=None,
+                   help="K3s namespace persistent and ephemeral storage quota. Default: 10Gi.")
     p.add_argument("--rancher-host", default=DEFAULT_RANCHER_HOST)
     p.add_argument("--portainer-host", default=DEFAULT_PORTAINER_HOST)
     p.add_argument("--cluster-id", default="local")
@@ -39,7 +45,14 @@ def main():
     if state_path(username).exists():
         die(f"A state file already exists for {username}; remove/reconcile it first.")
 
-    quota = args.quota or input("Quota for user (for example 5GB): ").strip()
+    quota = args.quota or input("Filesystem quota for user (for example 5GB): ").strip()
+    k3s_cpu_quota = args.k3s_cpu_quota or input("K3s CPU quota [2]: ").strip() or "2"
+    k3s_memory_quota = (
+        args.k3s_memory_quota or input("K3s memory quota [6Gi]: ").strip() or "6Gi"
+    )
+    k3s_storage_quota = (
+        args.k3s_storage_quota or input("K3s storage quota [10Gi]: ").strip() or "10Gi"
+    )
     password = generate_password()
     agent_port = args.agent_port or choose_agent_port()
     agent_addr = args.agent_address or agent_address(agent_port)
@@ -53,6 +66,9 @@ def main():
         "agent_port": agent_port,
         "agent_address": agent_addr,
         "namespace": f"{username}-namespace",
+        "k3s_cpu_quota": k3s_cpu_quota,
+        "k3s_memory_quota": k3s_memory_quota,
+        "k3s_storage_quota": k3s_storage_quota,
         "rancher_user": username,
         "rancher_project": f"{username}-project",
         "portainer_user": username,
@@ -89,7 +105,15 @@ def main():
         save_state(username, state)
 
         print("\n[3/5] Creating K3s namespace")
-        run_plumbing("install-k3s-namespace", ["-u", username])
+        run_plumbing(
+            "install-k3s-namespace",
+            [
+                "-u", username,
+                "--cpu-quota", k3s_cpu_quota,
+                "--memory-quota", k3s_memory_quota,
+                "--storage-quota", k3s_storage_quota,
+            ],
+        )
         state["k3s_namespace"] = True
         save_state(username, state)
 

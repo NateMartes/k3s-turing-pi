@@ -8,6 +8,7 @@ arguments.
 
 Administrative credentials should use:
 
+- `HARBOR_ADMIN_PASSWORD` (and optionally `HARBOR_ADMIN_USERNAME`, which defaults to `admin`)
 - `RANCHER_TOKEN`
 - `RANCHER_CLUSTER_ID`
 - `PORTAINER_API_KEY`
@@ -15,6 +16,7 @@ Administrative credentials should use:
 Service hostnames must be configured with:
 
 - `RANCHER_HOSTNAME`
+- `HARBOR_HOSTNAME`
 - `PORTAINER_HOSTNAME`
 
 If a variable is not set, the relevant command exits with an error unless an

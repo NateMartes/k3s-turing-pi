@@ -33,6 +33,8 @@ Creates a complete managed user.
   - Rancher
   - Portainer
 - Applies the requested filesystem quota.
+- Prompts for K3s namespace CPU, memory, and storage quotas (defaults: 2 CPU,
+  6Gi memory, and 10Gi storage).
 - Installs rootless Docker for the user.
 - Starts a Portainer Agent connected to that user's rootless Docker socket.
 - Creates `<username>-namespace` in K3s.
@@ -44,6 +46,13 @@ Creates a complete managed user.
 
 ```bash
 sudo ./user-scripts/create-user -u bob -q 5GB
+```
+
+The K3s resource quotas can also be supplied non-interactively:
+
+```bash
+sudo ./user-scripts/create-user -u bob -q 5GB \
+  --k3s-cpu-quota 2 --k3s-memory-quota 6Gi --k3s-storage-quota 10Gi
 ```
 
 Quota may be specified as MB or GB:
@@ -179,10 +188,19 @@ sudo ./plumbing-scripts/uninstall-portainer-agent -u bob
 
 ### `install-k3s-namespace`
 
-Creates `<username>-namespace`, a service account, RBAC, and the user's kubeconfig.
+Creates `<username>-namespace`, a service account, RBAC, a `ResourceQuota`, and
+the user's kubeconfig. Defaults are 2 CPU, 6Gi memory, and 10Gi storage across
+pod requests/limits; the storage quota also limits persistent-volume requests.
 
 ```bash
 sudo ./plumbing-scripts/install-k3s-namespace -u bob
+```
+
+Override a namespace's quotas when invoking the plumbing command directly:
+
+```bash
+sudo ./plumbing-scripts/install-k3s-namespace -u bob \
+  --cpu-quota 4 --memory-quota 12Gi --storage-quota 20Gi
 ```
 
 ### `uninstall-k3s-namespace`
@@ -194,6 +212,40 @@ sudo ./plumbing-scripts/uninstall-k3s-namespace -u bob
 ```
 
 Deleting the namespace also deletes namespaced Kubernetes resources inside it.
+
+### `install-harbor-account`
+
+Creates a local Harbor user and a private Harbor project named
+`<username>-namespace`, matching the user's K3s namespace. The user receives
+Project Admin access to only that project, so it can push and manage its own
+registry artifacts without receiving Harbor-wide administrator access.
+
+```bash
+sudo ./plumbing-scripts/install-harbor-account -u bob
+```
+
+The user's password can be supplied through `USER_PASSWORD`; the Harbor
+administrator password comes from `HARBOR_ADMIN_PASSWORD`. The command creates
+database-authenticated Harbor users, so it is not applicable when Harbor is
+configured to use LDAP, AD, or OIDC for user authentication.
+
+Each managed Harbor namespace project receives a 10GiB (10,737,418,240-byte)
+storage quota by default. Use `--storage-quota-bytes` to override it.
+
+### `uninstall-harbor-account`
+
+Deletes the user's `<username>-namespace` Harbor project, including all of its
+registry artifacts, then deletes the local Harbor user.
+
+```bash
+sudo ./plumbing-scripts/uninstall-harbor-account -u bob
+```
+
+To retain the project and its artifacts while deleting only the user:
+
+```bash
+sudo ./plumbing-scripts/uninstall-harbor-account -u bob --keep-project
+```
 
 ### `install-rancher-account`
 
@@ -282,6 +334,7 @@ The scripts also require:
 - a working K3s installation for Kubernetes namespace management
 - a reachable Rancher installation for Rancher commands
 - a reachable Portainer installation for Portainer commands
+- a reachable Harbor installation using database authentication for Harbor commands
 
 Rootless Docker installation also requires valid subordinate UID/GID ranges in:
 

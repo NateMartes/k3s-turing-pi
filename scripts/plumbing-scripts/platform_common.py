@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
 import getpass
 import json
 import os
@@ -22,6 +23,7 @@ load_sysadmin_env_or_exit()
 MANAGED_MARKER = "# Managed by sysadmin. Created by {}"
 DEFAULT_RANCHER_HOST = os.environ.get("RANCHER_HOSTNAME")
 DEFAULT_PORTAINER_HOST = os.environ.get("PORTAINER_HOSTNAME")
+DEFAULT_HARBOR_HOST = os.environ.get("HARBOR_HOSTNAME")
 
 def get_marker(service):
     return MANAGED_MARKER.format(service)
@@ -243,6 +245,14 @@ def portainer_headers(api_key: str) -> dict[str, str]:
 def rancher_headers(token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+
+def harbor_headers(username: str, password: str) -> dict[str, str]:
+    credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
+    return {
+        "Authorization": f"Basic {credentials}",
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
