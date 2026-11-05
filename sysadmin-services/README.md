@@ -113,6 +113,9 @@ ingress before it can pull images from the registry.
 - Portainer: `https://<PORTAINER_HOSTNAME>`
 - Rancher: `https://<RANCHER_HOSTNAME>`
 
+If your computer cannot reach the cluster network directly, follow the
+[SSH tunneling guide](../docs/TUNNELING.md).
+
 For Harbor's initial setup, log in as `admin` with
 `HARBOR_ADMIN_PASSWORD`. For Rancher, log in as `admin` with
 `RANCHER_BOOTSTRAP_PASSWORD`. Portainer guides you through creation of its

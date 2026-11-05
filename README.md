@@ -2,6 +2,8 @@
 
 Welcome to an overview of a Turing Pi Cluster with K3s, Rancher, and more!
 
+![K3s Turing Pi cluster architecture](diagrams/k3s-turing-pi-diagram.png)
+
 Currently this setup supports:
 
 - Ansible provisioning of K3s and more.
@@ -192,6 +194,9 @@ Currently this setup supports:
 14. Log into Rancher at the configured `RANCHER_HOSTNAME` as `admin`, using
     `RANCHER_BOOTSTRAP_PASSWORD`. Rancher uses this only for initial setup and
     prompts for the permanent administrator password on first login.
+
+    If your computer cannot reach the cluster network directly, use the
+    [SSH tunneling guide](docs/TUNNELING.md) to open the web services.
 
 That's it! Now you have K3s running some neat services!
 
