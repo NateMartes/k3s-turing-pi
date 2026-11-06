@@ -77,11 +77,6 @@
         key: k3s_sysadmin_service
       when: is_sysadmin_service_node | default(false) | bool
 
-    - name: Add selected node to the NVIDIA Jetson group
-      ansible.builtin.group_by:
-        key: k3s_nvidia_jetson
-      when: is_jetson | default(false) | bool
-
     - name: Ensure exactly one K3s server exists
       ansible.builtin.assert:
         that:
@@ -399,47 +394,6 @@
       loop: >-
         {{ current_sysadmin_service_nodes.stdout_lines |
            difference(groups['k3s_sysadmin_service']) }}
-      changed_when: true
-
-    - name: Read the current NVIDIA Jetson nodes
-      ansible.builtin.command:
-        argv:
-          - /usr/local/bin/k3s
-          - kubectl
-          - get
-          - nodes
-          - --selector=nvidia-jetson=true
-          - --output=jsonpath={range .items[*]}{.metadata.name}{"\n"}{end}
-      register: current_nvidia_jetson_nodes
-      changed_when: false
-
-    - name: Label selected NVIDIA Jetson nodes
-      ansible.builtin.command:
-        argv:
-          - /usr/local/bin/k3s
-          - kubectl
-          - label
-          - node
-          - "{{ item }}"
-          - nvidia-jetson=true
-          - --overwrite
-      loop: >-
-        {{ groups.get('k3s_nvidia_jetson', []) |
-           difference(current_nvidia_jetson_nodes.stdout_lines) }}
-      changed_when: true
-
-    - name: Remove the label from unselected NVIDIA Jetson nodes
-      ansible.builtin.command:
-        argv:
-          - /usr/local/bin/k3s
-          - kubectl
-          - label
-          - node
-          - "{{ item }}"
-          - nvidia-jetson-
-      loop: >-
-        {{ current_nvidia_jetson_nodes.stdout_lines |
-           difference(groups.get('k3s_nvidia_jetson', [])) }}
       changed_when: true
 
     - name: Read node Pod CIDR assignments

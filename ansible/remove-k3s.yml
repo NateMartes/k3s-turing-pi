@@ -16,12 +16,7 @@
         key: k3s_sysadmin_service
       when: is_sysadmin_service_node | default(false) | bool
 
-    - name: Add selected node to the NVIDIA Jetson group
-      ansible.builtin.group_by:
-        key: k3s_nvidia_jetson
-      when: is_jetson | default(false) | bool
-
-- name: Remove managed node labels
+- name: Remove sysadmin service node labels
   hosts: k3s_server
   become: true
   gather_facts: false
@@ -46,23 +41,6 @@
       changed_when: >-
         removed_sysadmin_service_labels.rc == 0 and
         'not labeled' not in removed_sysadmin_service_labels.stdout
-      failed_when: false
-      when: k3s_executable.stat.exists
-
-    - name: Remove the NVIDIA Jetson label from selected nodes
-      ansible.builtin.command:
-        argv:
-          - /usr/local/bin/k3s
-          - kubectl
-          - label
-          - node
-          - "{{ item }}"
-          - nvidia-jetson-
-      loop: "{{ groups.get('k3s_nvidia_jetson', []) }}"
-      register: removed_nvidia_jetson_labels
-      changed_when: >-
-        removed_nvidia_jetson_labels.rc == 0 and
-        'not labeled' not in removed_nvidia_jetson_labels.stdout
       failed_when: false
       when: k3s_executable.stat.exists
 
