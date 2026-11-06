@@ -20,7 +20,8 @@ ansible-playbook <playbook> -i inventory.yml
 - `inventory.yml`: The cluster nodes. Set `k3s_host: true` on exactly one K3s
   server, `is_default_gateway: true` on exactly one Ubuntu gateway, and
   `is_sysadmin_service_node: true` on each node that should run sysadmin
-  workloads.
+  workloads. Set `is_jetson: true` on NVIDIA Jetson nodes so K3s labels them
+  for hardware-specific workloads.
 - `distribute-hostnames.yml`: Adds every inventory node to the managed cluster
   block in `/etc/hosts` on every node, using its inventory name.
 - `setup-default-gateway.yml`: Configures the one Ubuntu node marked
@@ -47,6 +48,7 @@ name.
 | `k3s_host` | Per host | Exactly one node must be `true`; missing values default to `false`. | Selects the K3s server. Every other inventory node becomes a K3s agent. |
 | `is_default_gateway` | Per host | Exactly one node must be `true`; missing values default to `false`. | Selects the Ubuntu node configured by `setup-default-gateway.yml` to route and NAT LAN IPv4 traffic. |
 | `is_sysadmin_service_node` | Per host | At least one node must be `true`; missing values default to `false`. | Adds the Kubernetes label `sysadmin-services=true`, allowing selected sysadmin workloads to run on the node. Harbor additionally requires that a selected node be AMD64. |
+| `is_jetson` | Per host | Optional; defaults to `false`. | Adds the Kubernetes label `nvidia-jetson=true`, allowing Jetson-specific workloads to select the node. GPU workloads must separately use the NVIDIA runtime and request an `nvidia.com/gpu` resource. |
 | `is_desktop_node` | Per host | Optional; defaults to `false`. | Allows `setup-desktop-packages.yml` to modify the node. Nodes without this flag are skipped. |
 | `k3s_flannel_iface` | All nodes or per host | Optional; defaults to an empty string in `group_vars/all.yml`. | Pins Flannel to a stable network interface. Leave empty to let Flannel select the interface that routes the node IP. |
 | `default_gateway_lan_cidr` | All nodes or gateway host | Optional; defaults to `k3s_lan_cidr`. | IPv4 LAN routed and masqueraded by the default gateway. |

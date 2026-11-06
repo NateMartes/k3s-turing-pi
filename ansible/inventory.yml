@@ -17,6 +17,7 @@ all:
       hosts:
         1wol-hakgwang:
           ansible_host: 10.42.0.10
+          is_jetson: true
         1wol-hongdan:
           ansible_host: 10.42.0.11
           is_desktop_node: true
@@ -27,6 +28,7 @@ all:
       hosts:
         3wol-makgwang:
           ansible_host: 10.42.0.30
+          is_jetson: true
         3wol-hongdan:
           ansible_host: 10.42.0.31
           is_desktop_node: true
@@ -37,6 +39,7 @@ all:
       hosts:
         11wol-bigwang:
           ansible_host: 10.42.0.110
+          is_jetson: true
         11wol-chodan:
           ansible_host: 10.42.0.111
           is_desktop_node: true
