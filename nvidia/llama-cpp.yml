@@ -74,7 +74,7 @@ spec:
           image: ghcr.io/ggml-org/llama.cpp:full-cuda-b12124
           imagePullPolicy: IfNotPresent
           command:
-            - /app/full/llama-server
+            - /app/llama-server
           args:
             - --model
             - /models/qwen2.5-0.5b-instruct-q4_k_m.gguf
