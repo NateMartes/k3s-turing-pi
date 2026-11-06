@@ -42,3 +42,10 @@ spec:
                       - feature: kernel.enabledmodule
                         matchExpressions:
                           nvidia: {op: Exists}
+                  - matchFeatures:
+                      # Jetson Linux kernels built by this repository use the
+                      # -tegra local-version suffix. The NVIDIA driver may be
+                      # built in or exposed through a different module name.
+                      - feature: kernel.version
+                        matchExpressions:
+                          full: {op: InRegexp, value: [".*-tegra.*"]}

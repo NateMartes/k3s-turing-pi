@@ -86,11 +86,13 @@ ready. If a Harbor Pod remains pending, verify that the selected sysadmin node
 has both the `sysadmin-services=true` and `kubernetes.io/arch=amd64` labels.
 The NVIDIA chart installs Node Feature Discovery to locate compatible ARM64
 GPU nodes automatically. On Jetson, NFD derives `nvidia.com/gpu.present=true`
-from the loaded or built-in `nvidia` kernel module because the integrated Tegra
-GPU does not provide the NVIDIA PCI label used by discrete GPUs. This bootstrap
-label schedules the device-plugin Pod; the Pod then publishes the allocatable
-`nvidia.com/gpu` resource. The ARM64 constraint keeps the plugin off AMD64
-nodes that do not have the NVIDIA runtime configured.
+from the loaded or built-in `nvidia` kernel module, or from the `-tegra` kernel
+suffix used by the repository's Jetson build. These fallbacks are needed because
+the integrated Tegra GPU does not provide the NVIDIA PCI label used by discrete
+GPUs and its driver may not appear as a standalone `nvidia` entry in
+`/proc/modules`. This bootstrap label schedules the device-plugin Pod; the Pod
+then publishes the allocatable `nvidia.com/gpu` resource. The ARM64 constraint
+keeps the plugin off AMD64 nodes that do not have the NVIDIA runtime configured.
 
 Check both discovery and the published GPU resource:
 
