@@ -1,7 +1,8 @@
 # Sysadmin Services
 
-This Kustomize bundle deploys Rancher, Harbor, Portainer, and cert-manager to
-the K3s cluster. Run the commands below from the repository root.
+This Kustomize bundle deploys Rancher, Harbor, Portainer, cert-manager, and the
+NVIDIA device plugin to the K3s cluster. Run the commands below from the
+repository root.
 
 ## Getting Started
 
@@ -10,6 +11,8 @@ the K3s cluster. Run the commands below from the repository root.
 Before deploying, ensure that:
 
 - K3s is running and `kubectl` can reach the cluster.
+- NVIDIA GPU nodes have `nvidia-container-runtime` installed and detected by
+  K3s as the `nvidia` RuntimeClass.
 - Every service hostname resolves to an address served by the cluster's
   Traefik ingress.
 - An AMD64 K3s node is marked `is_sysadmin_service_node: true` in
@@ -75,11 +78,20 @@ sudo k3s kubectl get helmcharts -n kube-system
 sudo k3s kubectl get pods -n sysadmin-system
 sudo k3s kubectl get pods -n cattle-system
 sudo k3s kubectl get pods -n cert-manager
+sudo k3s kubectl get pods -n nvidia-device-plugin
 ```
 
 Harbor consists of several Pods and can take longer than Portainer to become
 ready. If a Harbor Pod remains pending, verify that the selected sysadmin node
 has both the `sysadmin-services=true` and `kubernetes.io/arch=amd64` labels.
+The NVIDIA chart installs Node Feature Discovery to locate compatible GPU
+nodes automatically. When its device-plugin Pods are ready, verify that those
+nodes advertise `nvidia.com/gpu`:
+
+```bash
+sudo k3s kubectl get nodes \
+  -o custom-columns='NAME:.metadata.name,GPU:.status.allocatable.nvidia\.com/gpu'
+```
 
 ### 5. Trust the private ingress certificates locally
 
@@ -192,13 +204,15 @@ container signal-denial behavior is available in this
 - Portainer: `sysadmin-system`
 - Rancher: `cattle-system`
 - cert-manager: `cert-manager`
+- NVIDIA device plugin and Node Feature Discovery: `nvidia-device-plugin`
 
 Rancher remains in `cattle-system` because some Rancher components assume that
 namespace. cert-manager remains in its conventional `cert-manager` namespace
 because it is a singleton cluster dependency with CRDs, webhooks, and
-cluster-scoped RBAC.
+cluster-scoped RBAC. The NVIDIA device plugin remains in its own namespace
+because it is a cluster-level hardware discovery service.
 
-All four `HelmChart` resources use this label so they remain logically grouped:
+All five `HelmChart` resources use this label so they remain logically grouped:
 
 ```yaml
 app.kubernetes.io/part-of: sysadmin-system
@@ -210,6 +224,7 @@ app.kubernetes.io/part-of: sysadmin-system
 - Portainer CE: 2.45.2 (chart 245.2.0)
 - Rancher: 2.15.0 (chart 2.15.1)
 - cert-manager: v1.21.2
+- NVIDIA device plugin: 0.19.3
 
 Harbor and Portainer use persistent `local-path` volumes. Their data remains on
 the selected sysadmin-service node, so back up the corresponding PVC data

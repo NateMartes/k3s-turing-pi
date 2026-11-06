@@ -11,10 +11,12 @@ Currently this setup supports:
 - Rancher deployment into K3s.
 - Harbor registry deployment into K3s.
 - Portainer deployment into K3s.
+- NVIDIA GPU discovery and allocation in K3s.
 - User management and automated account creation for:
   - Linux
   - Portainer
   - Rancher
+  - Harbor
 
 ## Directories
 

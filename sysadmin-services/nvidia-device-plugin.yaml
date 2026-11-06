@@ -1,0 +1,20 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: nvidia-device-plugin
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/part-of: sysadmin-system
+spec:
+  chart: nvidia-device-plugin
+  repo: https://nvidia.github.io/k8s-device-plugin
+  version: 0.19.3
+  targetNamespace: nvidia-device-plugin
+  createNamespace: true
+  timeout: 10m
+  backOffLimit: 20
+  valuesContent: |-
+    runtimeClassName: nvidia
+
+    nfd:
+      enabled: true
