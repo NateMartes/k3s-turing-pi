@@ -93,6 +93,9 @@ GPUs and its driver may not appear as a standalone `nvidia` entry in
 `/proc/modules`. This bootstrap label schedules the device-plugin Pod; the Pod
 then publishes the allocatable `nvidia.com/gpu` resource. The ARM64 constraint
 keeps the plugin off AMD64 nodes that do not have the NVIDIA runtime configured.
+The device plugin passes allocated GPUs by index so the Tegra GPU is presented
+to the Jetson CSV runtime as device `0`; its default UUID-style identifier is
+the literal value `tegra`, which the runtime cannot inject.
 
 Check both discovery and the published GPU resource:
 

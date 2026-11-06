@@ -16,6 +16,10 @@ spec:
   valuesContent: |-
     runtimeClassName: nvidia
 
+    # The plugin's Tegra UUID is the literal value "tegra", but the NVIDIA
+    # runtime's Jetson CSV mode accepts device indices (such as "0").
+    deviceIDStrategy: index
+
     nodeSelector:
       # The cluster's NVIDIA GPUs are on ARM64 Jetson nodes. Keep the
       # device-plugin pods off AMD64 nodes that lack the NVIDIA runtime.
