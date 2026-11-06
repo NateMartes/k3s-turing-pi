@@ -1,0 +1,13 @@
+---
+- name: Restart K3s on every node
+  hosts: all
+  become: true
+  gather_facts: false
+  serial: 1
+
+  tasks:
+    - name: Restart the K3s service
+      ansible.builtin.systemd:
+        name: "{{ 'k3s' if (k3s_host | default(false) | bool) else 'k3s-agent' }}"
+        state: restarted
+        daemon_reload: true

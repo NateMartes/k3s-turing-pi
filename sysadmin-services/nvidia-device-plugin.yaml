@@ -16,5 +16,11 @@ spec:
   valuesContent: |-
     runtimeClassName: nvidia
 
+    nodeSelector:
+      # Since the jetsons using ARM, k8s will find them with this
+      # If we didn't have this, then a node (like a AMD64 one) might
+      # be picked...
+      kubernetes.io/arch: arm64
+
     nfd:
       enabled: true

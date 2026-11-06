@@ -84,9 +84,10 @@ sudo k3s kubectl get pods -n nvidia-device-plugin
 Harbor consists of several Pods and can take longer than Portainer to become
 ready. If a Harbor Pod remains pending, verify that the selected sysadmin node
 has both the `sysadmin-services=true` and `kubernetes.io/arch=amd64` labels.
-The NVIDIA chart installs Node Feature Discovery to locate compatible GPU
-nodes automatically. When its device-plugin Pods are ready, verify that those
-nodes advertise `nvidia.com/gpu`:
+The NVIDIA chart installs Node Feature Discovery to locate compatible ARM64
+GPU nodes automatically. The ARM64 constraint keeps the plugin off AMD64 nodes
+that do not have the NVIDIA runtime configured. When its device-plugin Pods are
+ready, verify that those nodes advertise `nvidia.com/gpu`:
 
 ```bash
 sudo k3s kubectl get nodes \

@@ -26,6 +26,7 @@ ansible-playbook <playbook> -i inventory.yml
 - `setup-default-gateway.yml`: Configures the one Ubuntu node marked
   `is_default_gateway: true` to route and NAT IPv4 traffic for the LAN.
 - `setup-k3s.yml`: Sets up K3s with 1 server node and the rest as agent nodes.
+- `restart-k3s.yml`: Restarts the K3s server and agents one node at a time.
 - `remove-k3s.yml`: Removes K3s from all nodes.
 - `setup-common-packages.yml`: Sets up all nodes to have common packages throughout.
 - `setup-desktop-packages.yml`: Installs specific packages for nodes with GUIs.
