@@ -17,10 +17,28 @@ spec:
     runtimeClassName: nvidia
 
     nodeSelector:
-      # Since the jetsons using ARM, k8s will find them with this
-      # If we didn't have this, then a node (like a AMD64 one) might
-      # be picked...
+      # The cluster's NVIDIA GPUs are on ARM64 Jetson nodes. Keep the
+      # device-plugin pods off AMD64 nodes that lack the NVIDIA runtime.
       kubernetes.io/arch: arm64
 
     nfd:
       enabled: true
+      worker:
+        config:
+          sources:
+            custom:
+              # The chart's default affinity accepts this label. Tegra GPUs
+              # are integrated devices, so the usual NVIDIA PCI label may
+              # not exist on Jetson nodes.
+              - name: NVIDIA GPU driver available
+                labels:
+                  nvidia.com/gpu.present: "true"
+                matchAny:
+                  - matchFeatures:
+                      - feature: kernel.loadedmodule
+                        matchExpressions:
+                          nvidia: {op: Exists}
+                  - matchFeatures:
+                      - feature: kernel.enabledmodule
+                        matchExpressions:
+                          nvidia: {op: Exists}
