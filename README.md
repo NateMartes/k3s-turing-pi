@@ -273,7 +273,9 @@ sudo ./scripts/remove-user -u <new-user>
 
 The [`argo`](argo/README.md) directory provides a deployable
 `argo-workflow-runner` service account and the minimum RBAC needed for workflow
-executor Pods to create and patch `WorkflowTaskResult` resources. Deploy it in
-each namespace that runs Argo workflows, then set
+executor Pods to create and patch `WorkflowTaskResult` resources. The
+`create-user` and `remove-user` commands manage one runner in each user's K3s
+namespace; the lower-level install and uninstall commands accept the target
+namespace explicitly. Set
 `spec.serviceAccountName: argo-workflow-runner` in the supplied workflow
 template.

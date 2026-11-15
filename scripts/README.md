@@ -39,6 +39,8 @@ Creates a complete managed user.
 - Installs rootless Docker for the user.
 - Starts a Portainer Agent connected to that user's rootless Docker socket.
 - Creates `<username>-namespace` in K3s.
+- Installs `argo-workflow-runner` and its minimal executor RBAC in the user's
+  K3s namespace.
 - Creates the user's Harbor account and private `<username>-namespace` project
   with a 10GiB storage quota.
 - Creates the user's Rancher account and project.
@@ -82,6 +84,7 @@ It removes, in reverse provisioning order:
 - Portainer account and environment
 - Rancher project and Rancher account
 - Harbor project and Harbor account
+- Argo workflow runner RBAC
 - K3s namespace and namespace resources
 - Portainer Agent
 - Rootless Docker
@@ -256,6 +259,29 @@ Deletes the user's namespace and the kubeconfig created by this tool.
 
 ```bash
 sudo ./plumbing-scripts/uninstall-k3s-namespace -u bob
+```
+
+### `install-argo-workflow-runner`
+
+Installs `argo-workflow-runner` and its minimal `WorkflowTaskResult` RBAC in an
+existing user namespace. Both the user and namespace are explicit so the
+command cannot silently target `default` or `argo`.
+
+```bash
+sudo ./plumbing-scripts/install-argo-workflow-runner \
+  --username bob \
+  --namespace bob-namespace
+```
+
+### `uninstall-argo-workflow-runner`
+
+Removes the runner service account, Role, and RoleBinding without deleting the
+namespace or other user workloads.
+
+```bash
+sudo ./plumbing-scripts/uninstall-argo-workflow-runner \
+  --username bob \
+  --namespace bob-namespace
 ```
 
 Deleting the namespace also deletes namespaced Kubernetes resources inside it.

@@ -17,7 +17,7 @@ def main():
     p = argparse.ArgumentParser(
         description=(
             "Create a Linux user and provision their "
-            "Docker/K3s/Harbor/Rancher/Portainer resources."
+            "Docker/K3s/Argo/Harbor/Rancher/Portainer resources."
         )
     )
     p.add_argument("-u", "--username", required=True)
@@ -97,6 +97,7 @@ def main():
         "portainer_environment": f"{username}-docker",
         "docker_rootless": False,
         "portainer_agent": False,
+        "argo_workflow_runner": False,
     }
 
     try:
@@ -111,7 +112,7 @@ def main():
         state.update(set_quota(username, quota))
         save_state(username, state)
 
-        print("\n[1/6] Installing rootless Docker")
+        print("\n[1/7] Installing rootless Docker")
         run_plumbing(
             "install-docker-rootless", ["-u", username],
             raw_logs=args.raw_logs, label="Installing rootless Docker",
@@ -119,7 +120,7 @@ def main():
         state["docker_rootless"] = True
         save_state(username, state)
 
-        print("\n[2/6] Installing Portainer Agent")
+        print("\n[2/7] Installing Portainer Agent")
         agent_args = [
             "-u", username,
             "-H", args.portainer_host,
@@ -132,7 +133,7 @@ def main():
         state["portainer_agent"] = True
         save_state(username, state)
 
-        print("\n[3/6] Creating K3s namespace")
+        print("\n[3/7] Creating K3s namespace")
         run_plumbing(
             "install-k3s-namespace",
             [
@@ -147,7 +148,17 @@ def main():
         state["k3s_namespace"] = True
         save_state(username, state)
 
-        print("\n[4/6] Creating Harbor account/project")
+        print("\n[4/7] Installing Argo workflow runner")
+        run_plumbing(
+            "install-argo-workflow-runner",
+            ["-u", username, "-n", state["namespace"]],
+            raw_logs=args.raw_logs,
+            label="Installing Argo workflow runner",
+        )
+        state["argo_workflow_runner"] = True
+        save_state(username, state)
+
+        print("\n[5/7] Creating Harbor account/project")
         run_plumbing(
             "install-harbor-account",
             ["-u", username, "-H", args.harbor_host],
@@ -165,7 +176,7 @@ def main():
         state["harbor_account"] = True
         save_state(username, state)
 
-        print("\n[5/6] Creating Rancher account/project")
+        print("\n[6/7] Creating Rancher account/project")
         rancher_args = ["-u", username, "-H", args.rancher_host]
         if args.cluster_id:
             rancher_args += ["--cluster-id", args.cluster_id]
@@ -182,7 +193,7 @@ def main():
         state["rancher_account"] = True
         save_state(username, state)
 
-        print("\n[6/6] Creating Portainer account/environment")
+        print("\n[7/7] Creating Portainer account/environment")
         portainer_args = [
             "-u", username,
             "-H", args.portainer_host,

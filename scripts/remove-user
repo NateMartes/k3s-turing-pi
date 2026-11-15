@@ -68,6 +68,7 @@ def main():
     print(f"Rootless Docker:        {state.get('docker_rootless', 'unknown')}")
     print(f"Portainer Agent:        {state.get('portainer_agent', 'unknown')} (port {agent_port})")
     print(f"K3s namespace:          {state.get('namespace', username + '-namespace')}")
+    print(f"Argo workflow runner:   {state.get('argo_workflow_runner', 'unknown')}")
     print(f"Rancher user/project:   {username} / {state.get('rancher_project', username + '-project')}")
     print(f"Harbor user/project:    {username} / {state.get('harbor_project', username + '-namespace')}")
     print(f"Portainer user/env:     {username} / {state.get('portainer_environment', username + '-docker')}")
@@ -78,14 +79,14 @@ def main():
         return
 
     # Reverse provisioning order.
-    print("\n[1/6] Removing Portainer account/environment")
+    print("\n[1/7] Removing Portainer account/environment")
     pa = ["-u", username, "-H", portainer_host]
     run_plumbing("uninstall-portainer-account", pa, check=False, extra_env={
             "PORTAINER_API_KEY": DEFAULT_PORTAINER_API_KEY
         }, raw_logs=args.raw_logs, label="Removing Portainer account and environment"
     )
 
-    print("\n[2/6] Removing Rancher project/account")
+    print("\n[2/7] Removing Rancher project/account")
     ra = ["-u", username, "-H", rancher_host]
     if cluster_id:
         ra += ["--cluster-id", cluster_id]
@@ -94,7 +95,7 @@ def main():
         }, raw_logs=args.raw_logs, label="Removing Rancher account and project"
     )
 
-    print("\n[3/6] Removing Harbor project/account")
+    print("\n[3/7] Removing Harbor project/account")
     run_plumbing(
         "uninstall-harbor-account",
         ["-u", username, "-H", harbor_host],
@@ -108,19 +109,28 @@ def main():
         label="Removing Harbor account and project",
     )
 
-    print("\n[4/6] Removing K3s namespace")
+    print("\n[4/7] Removing Argo workflow runner")
+    run_plumbing(
+        "uninstall-argo-workflow-runner",
+        ["-u", username, "-n", state.get("namespace", username + "-namespace")],
+        check=False,
+        raw_logs=args.raw_logs,
+        label="Removing Argo workflow runner",
+    )
+
+    print("\n[5/7] Removing K3s namespace")
     run_plumbing(
         "uninstall-k3s-namespace", ["-u", username], check=False,
         raw_logs=args.raw_logs, label="Removing K3s namespace",
     )
 
-    print("\n[5/6] Removing Portainer Agent")
+    print("\n[6/7] Removing Portainer Agent")
     run_plumbing("uninstall-portainer-agent", ["-u", username], check=False, extra_env={
             "PORTAINER_API_KEY": DEFAULT_PORTAINER_API_KEY
         }, raw_logs=args.raw_logs, label="Removing Portainer Agent"
     )
 
-    print("\n[6/6] Removing rootless Docker")
+    print("\n[7/7] Removing rootless Docker")
     docker_args = ["-u", username]
     if args.purge_data:
         docker_args.append("--purge-data")

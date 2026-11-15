@@ -1,9 +1,11 @@
 # Argo Workflow Runner
 
-This Kustomize bundle creates an `argo-workflow-runner` service account with
-the minimum namespace-scoped permissions required by Argo workflow executor
-Pods. It can create and patch `WorkflowTaskResult` resources, but it cannot
-create Deployments, Services, Secrets, or resources in another namespace.
+The user-management plumbing scripts render the manifest template in this
+directory to create an `argo-workflow-runner` service account in each user's
+namespace. The account has the minimum namespace-scoped permissions required
+by Argo workflow executor Pods: it can create and patch `WorkflowTaskResult`
+resources, but it cannot create Deployments, Services, Secrets, or resources
+in another namespace.
 
 ## Setup
 
@@ -38,29 +40,51 @@ sudo k3s kubectl rollout status deployment/argo-server \
 sudo k3s kubectl get pods --namespace argo
 ```
 
-### 2. Select the workflow namespace
+### 2. Create the user's namespace
 
-The target namespace must exist. The bundle targets the `default` namespace
-initially. To use another namespace, change the `namespace` value in
-`kustomization.yaml` before applying it.
+The workflow runner is installed after the user's namespace exists. The main
+`create-user` command performs both steps automatically. When using the
+plumbing commands directly, create the namespace first or use the repository's
+namespace installer:
+
+```bash
+sudo ./scripts/plumbing-scripts/install-k3s-namespace --username bob
+```
 
 ### 3. Deploy the workflow runner
 
-From the repository root, deploy the bundle with K3s:
+Pass both the Linux username and target namespace explicitly:
 
 ```bash
-sudo k3s kubectl apply -k argo
+sudo ./scripts/plumbing-scripts/install-argo-workflow-runner \
+  --username bob \
+  --namespace bob-namespace
 ```
 
-If this machine exposes K3s through the regular `kubectl` command instead, use:
+This creates the following namespaced resources:
+
+- `ServiceAccount/argo-workflow-runner`
+- `Role/argo-workflow-runner`
+- `RoleBinding/argo-workflow-runner`
+
+The resources use `app.kubernetes.io/managed-by: k3s-turing-pi` to identify
+this repository's user-management tooling as their manager, and carry the
+managed Linux username in the `k3s-turing-pi.io/username` annotation.
+
+The fixed name is intentional. Service accounts in different namespaces are
+different Kubernetes identities, so `bob-namespace/argo-workflow-runner` and
+`alice-namespace/argo-workflow-runner` do not share permissions. Keeping the
+same name lets one shared `ClusterWorkflowTemplate` work in every user
+namespace.
+
+The main user-management commands install and remove the runner automatically.
+To remove only the runner without deleting its namespace, run:
 
 ```bash
-sudo kubectl apply -k argo
+sudo ./scripts/plumbing-scripts/uninstall-argo-workflow-runner \
+  --username bob \
+  --namespace bob-namespace
 ```
-
-Create a separate instance of this bundle in every namespace that will run
-workflows. A service account is namespaced, so an account deployed in `default`
-cannot be used by a workflow running in another namespace.
 
 ## Use in a workflow
 
@@ -72,14 +96,16 @@ spec:
   serviceAccountName: argo-workflow-runner
 ```
 
-The name resolves in the namespace containing the submitted `Workflow`.
+The name resolves in the namespace containing the submitted `Workflow`. A
+workflow in `bob-namespace` therefore uses
+`system:serviceaccount:bob-namespace:argo-workflow-runner`.
 
 ## Verify
 
-Set `WORKFLOW_NAMESPACE` to the namespace configured in `kustomization.yaml`:
+Set `WORKFLOW_NAMESPACE` to the namespace where the runner was installed:
 
 ```bash
-WORKFLOW_NAMESPACE=default
+WORKFLOW_NAMESPACE=bob-namespace
 
 sudo k3s kubectl get serviceaccount argo-workflow-runner \
   --namespace "${WORKFLOW_NAMESPACE}"
