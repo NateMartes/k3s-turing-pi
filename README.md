@@ -2,6 +2,10 @@
 
 Welcome to an overview of a Turing Pi Cluster with K3s, Rancher, and more!
 
+Argo workflow Pods can use the repository's namespace-scoped
+[`argo-workflow-runner`](argo/README.md) service account and minimal executor
+permissions.
+
 ![K3s Turing Pi cluster architecture](diagrams/k3s-turing-pi-diagram.png)
 
 Currently this setup supports:
@@ -11,6 +15,7 @@ Currently this setup supports:
 - Rancher deployment into K3s.
 - Harbor registry deployment into K3s.
 - Portainer deployment into K3s.
+- Argo Workflows installation and namespace-scoped workflow execution.
 - NVIDIA GPU discovery and allocation in K3s.
 - User management and automated account creation for:
   - Linux
@@ -21,6 +26,7 @@ Currently this setup supports:
 ## Directories
 
 - `ansible`: Automated playbooks to install and set up software.
+- `argo`: Namespace-scoped service account and RBAC for Argo workflow Pods.
 - `etc`: Templates for files distributed to each node's `/etc` directory.
 - `scripts`: Programs to set up software for users and system-wide use.
 - `sysadmin-services`: Services running on this cluster, deployed via Kubernetes.
@@ -262,3 +268,12 @@ not allow a password to be updated.
 ```bash
 sudo ./scripts/remove-user -u <new-user>
 ```
+
+## Argo Workflow Runner
+
+The [`argo`](argo/README.md) directory provides a deployable
+`argo-workflow-runner` service account and the minimum RBAC needed for workflow
+executor Pods to create and patch `WorkflowTaskResult` resources. Deploy it in
+each namespace that runs Argo workflows, then set
+`spec.serviceAccountName: argo-workflow-runner` in the supplied workflow
+template.
