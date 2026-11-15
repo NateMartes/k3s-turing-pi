@@ -29,6 +29,14 @@ rules:
     verbs:
       - create
       - patch
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - create
+      - get
+      - delete
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -49,3 +57,37 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: argo-workflow-runner
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argo-workflow-template-reader
+  labels:
+    app.kubernetes.io/name: argo-workflow-template-reader
+    app.kubernetes.io/managed-by: k3s-turing-pi
+rules:
+  - apiGroups:
+      - argoproj.io
+    resources:
+      - clusterworkflowtemplates
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ${USERNAME}-argo-workflow-template-reader
+  labels:
+    app.kubernetes.io/name: argo-workflow-template-reader
+    app.kubernetes.io/instance: ${NAMESPACE}
+    app.kubernetes.io/managed-by: k3s-turing-pi
+  annotations:
+    k3s-turing-pi.io/username: ${USERNAME}
+subjects:
+  - kind: ServiceAccount
+    name: ${USERNAME}-user
+    namespace: ${NAMESPACE}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argo-workflow-template-reader

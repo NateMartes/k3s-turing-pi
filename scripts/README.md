@@ -39,8 +39,8 @@ Creates a complete managed user.
 - Installs rootless Docker for the user.
 - Starts a Portainer Agent connected to that user's rootless Docker socket.
 - Creates `<username>-namespace` in K3s.
-- Installs `argo-workflow-runner` and its minimal executor RBAC in the user's
-  K3s namespace.
+- Installs `argo-workflow-runner`, its executor and temporary Service RBAC, and
+  read-only shared Argo workflow template access for the user.
 - Creates the user's Harbor account and private `<username>-namespace` project
   with a 10GiB storage quota.
 - Creates the user's Rancher account and project.
@@ -274,9 +274,12 @@ sudo ./plumbing-scripts/uninstall-k3s-namespace -u bob
 
 ### `install-argo-workflow-runner`
 
-Installs `argo-workflow-runner` and its minimal `WorkflowTaskResult` RBAC in an
-existing user namespace. Both the user and namespace are explicit so the
-command cannot silently target `default` or `argo`.
+Installs `argo-workflow-runner` with `WorkflowTaskResult` permissions and
+create, get, and delete access to Services in an existing user namespace. It
+also lets the user's namespace service account read shared
+`ClusterWorkflowTemplate` resources for direct Argo CLI submission. Both the
+user and namespace are explicit so the command cannot silently target
+`default` or `argo`.
 
 ```bash
 sudo ./plumbing-scripts/install-argo-workflow-runner \
@@ -286,8 +289,9 @@ sudo ./plumbing-scripts/install-argo-workflow-runner \
 
 ### `uninstall-argo-workflow-runner`
 
-Removes the runner service account, Role, and RoleBinding without deleting the
-namespace or other user workloads.
+Removes the runner service account, Role, RoleBinding, and the user's cluster
+template reader binding without deleting the namespace or other user
+workloads.
 
 ```bash
 sudo ./plumbing-scripts/uninstall-argo-workflow-runner \

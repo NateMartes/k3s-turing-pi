@@ -39,6 +39,15 @@ def main():
     kubectl(
         [
             "delete",
+            "clusterrolebinding",
+            f"{username}-argo-workflow-template-reader",
+            "--ignore-not-found=true",
+        ]
+    )
+
+    kubectl(
+        [
+            "delete",
             f"rolebinding/{runner}",
             f"role/{runner}",
             f"serviceaccount/{runner}",
@@ -48,6 +57,7 @@ def main():
         ]
     )
     print(f"Removed Argo workflow runner resources from {namespace}: {runner}")
+    print("Removed the user's ClusterWorkflowTemplate reader binding.")
 
 
 if __name__ == "__main__":

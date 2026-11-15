@@ -3,8 +3,8 @@
 Welcome to an overview of a Turing Pi Cluster with K3s, Rancher, and more!
 
 Argo workflow Pods can use the repository's namespace-scoped
-[`argo-workflow-runner`](argo/README.md) service account and minimal executor
-permissions.
+[`argo-workflow-runner`](argo/README.md) service account with executor and
+temporary Service permissions.
 
 ![K3s Turing Pi cluster architecture](diagrams/k3s-turing-pi-diagram.png)
 
@@ -284,10 +284,12 @@ sudo ./scripts/remove-user -u <new-user>
 ## Argo Workflow Runner
 
 The [`argo`](argo/README.md) directory provides a deployable
-`argo-workflow-runner` service account and the minimum RBAC needed for workflow
-executor Pods to create and patch `WorkflowTaskResult` resources. The
+`argo-workflow-runner` service account and the RBAC needed for workflow
+executor Pods to report results and manage temporary Services. The
 `create-user` and `remove-user` commands manage one runner in each user's K3s
-namespace; the lower-level install and uninstall commands accept the target
-namespace explicitly. Set
+namespace and read-only access to shared `ClusterWorkflowTemplate` resources;
+the lower-level install and uninstall commands accept the target namespace
+explicitly. Set
 `spec.serviceAccountName: argo-workflow-runner` in the supplied workflow
-template.
+template. Follow [Deploying an Argo Workflow](docs/DEPLOYING_ARGO_WORKFLOW.md)
+to run the three-minute Flask example.

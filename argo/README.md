@@ -4,8 +4,12 @@ The user-management plumbing scripts render the manifest template in this
 directory to create an `argo-workflow-runner` service account in each user's
 namespace. The account has the minimum namespace-scoped permissions required
 by Argo workflow executor Pods: it can create and patch `WorkflowTaskResult`
-resources, but it cannot create Deployments, Services, Secrets, or resources
-in another namespace.
+resources. It can also create, inspect, and delete Services for supplied
+workflows that expose temporary endpoints, but it cannot create Deployments,
+Secrets, or resources in another namespace. The user's existing
+`<username>-user` service account also receives read-only access to
+`ClusterWorkflowTemplate` resources so the Argo CLI can submit a shared
+template directly.
 
 ## Setup
 
@@ -77,6 +81,13 @@ This creates the following namespaced resources:
 - `Role/argo-workflow-runner`
 - `RoleBinding/argo-workflow-runner`
 
+It also creates the shared
+`ClusterRole/argo-workflow-template-reader` and a per-user
+`ClusterRoleBinding/<username>-argo-workflow-template-reader`. The role only
+grants `get` access to cluster workflow templates; it cannot create, update, or
+delete them. The shared ClusterRole remains when one user's runner is removed
+because other users may still depend on it.
+
 The resources use `app.kubernetes.io/managed-by: k3s-turing-pi` to identify
 this repository's user-management tooling as their manager, and carry the
 managed Linux username in the `k3s-turing-pi.io/username` annotation.
@@ -112,10 +123,12 @@ workflow in `bob-namespace` therefore uses
 
 ## Verify
 
-Set `WORKFLOW_NAMESPACE` to the namespace where the runner was installed:
+Set `USERNAME` and `WORKFLOW_NAMESPACE` for the user whose runner was
+installed:
 
 ```bash
-WORKFLOW_NAMESPACE=bob-namespace
+USERNAME=bob
+WORKFLOW_NAMESPACE="${USERNAME}-namespace"
 
 sudo k3s kubectl get serviceaccount argo-workflow-runner \
   --namespace "${WORKFLOW_NAMESPACE}"
@@ -127,10 +140,25 @@ sudo k3s kubectl auth can-i create workflowtaskresults.argoproj.io \
 sudo k3s kubectl auth can-i patch workflowtaskresults.argoproj.io \
   --namespace "${WORKFLOW_NAMESPACE}" \
   --as "system:serviceaccount:${WORKFLOW_NAMESPACE}:argo-workflow-runner"
+
+sudo k3s kubectl auth can-i create services \
+  --namespace "${WORKFLOW_NAMESPACE}" \
+  --as "system:serviceaccount:${WORKFLOW_NAMESPACE}:argo-workflow-runner"
+
+sudo k3s kubectl auth can-i get clusterworkflowtemplates.argoproj.io \
+  --as "system:serviceaccount:${WORKFLOW_NAMESPACE}:${USERNAME}-user"
 ```
 
-Both authorization checks should return `yes`.
+All four authorization checks should return `yes`.
 
 Workflows that create Kubernetes resources through Argo resource templates
 need additional, narrowly scoped permissions for those resource types. Add
 those permissions only when a supplied workflow requires them.
+
+## Example workflow
+
+The repository includes a three-minute Flask API example at
+`argo/flask-hello-world-argo`. Follow
+[Deploying an Argo Workflow](../docs/DEPLOYING_ARGO_WORKFLOW.md) to install its
+shared `ClusterWorkflowTemplate`, submit it in a user namespace, and call the
+API.

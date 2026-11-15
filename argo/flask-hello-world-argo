@@ -1,0 +1,172 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: flask-hello-world
+  labels:
+    app.kubernetes.io/name: flask-hello-world
+    app.kubernetes.io/managed-by: k3s-turing-pi
+spec:
+  entrypoint: run
+  onExit: remove-service
+  serviceAccountName: argo-workflow-runner
+
+  arguments:
+    parameters:
+      - name: message
+        value: World
+
+  podGC:
+    strategy: OnPodCompletion
+    deleteDelayDuration: 0s
+
+  templates:
+    - name: run
+      dag:
+        tasks:
+          - name: create-service
+            template: create-service
+          - name: serve
+            depends: create-service.Succeeded
+            template: serve
+            arguments:
+              parameters:
+                - name: node-port
+                  value: "{{tasks.create-service.outputs.parameters.node-port}}"
+
+    - name: create-service
+      resource:
+        action: create
+        setOwnerReference: true
+        manifest: |
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: "{{workflow.name}}"
+            labels:
+              app.kubernetes.io/name: flask-hello-world
+              app.kubernetes.io/instance: "{{workflow.name}}"
+              app.kubernetes.io/managed-by: k3s-turing-pi
+          spec:
+            type: NodePort
+            selector:
+              app.kubernetes.io/name: flask-hello-world
+              app.kubernetes.io/instance: "{{workflow.name}}"
+            ports:
+              - name: http
+                port: 8080
+                targetPort: http
+      outputs:
+        parameters:
+          - name: node-port
+            valueFrom:
+              jsonPath: '{.spec.ports[0].nodePort}'
+
+    - name: serve
+      inputs:
+        parameters:
+          - name: node-port
+      metadata:
+        labels:
+          app.kubernetes.io/name: flask-hello-world
+          app.kubernetes.io/instance: "{{workflow.name}}"
+      container:
+        image: python:3.12-slim
+        command:
+          - /bin/sh
+          - -c
+        args:
+          - |
+            set -eu
+
+            python -m pip install \
+              --quiet \
+              --no-cache-dir \
+              'Flask>=3.1,<4'
+
+            python - <<'PY'
+            import os
+            import threading
+            import time
+
+            from flask import Flask, jsonify
+            from werkzeug.serving import make_server
+
+            app = Flask(__name__)
+            message = os.environ["ECHO_MESSAGE"]
+            host_ip = os.environ["HOST_IP"]
+            node_port = os.environ["NODE_PORT"]
+            workflow_name = os.environ["WORKFLOW_NAME"]
+            lifetime_seconds = 180
+
+            @app.get("/")
+            def hello():
+                return jsonify(message=f"Hello {message}")
+
+            @app.get("/healthz")
+            def health():
+                return jsonify(status="ok")
+
+            server = make_server("0.0.0.0", 8080, app)
+            server_thread = threading.Thread(
+                target=server.serve_forever,
+                daemon=True,
+            )
+            server_thread.start()
+            time.sleep(3)
+
+            url_host = f"[{host_ip}]" if ":" in host_ip else host_ip
+            url = f"http://{url_host}:{node_port}/"
+            print("", flush=True)
+            print("Flask workflow is ready", flush=True)
+            print(f"Workflow: {workflow_name}", flush=True)
+            print(f"Response: Hello {message}", flush=True)
+            print(f"URL: {url}", flush=True)
+            print(f"Try: curl {url}", flush=True)
+            print(f"Lifetime: {lifetime_seconds} seconds", flush=True)
+            print("", flush=True)
+
+            time.sleep(lifetime_seconds)
+            server.shutdown()
+            server_thread.join()
+            server.server_close()
+            PY
+        env:
+          - name: ECHO_MESSAGE
+            value: "{{workflow.parameters.message}}"
+          - name: HOST_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.hostIP
+          - name: NODE_PORT
+            value: "{{inputs.parameters.node-port}}"
+          - name: WORKFLOW_NAME
+            value: "{{workflow.name}}"
+        ports:
+          - name: http
+            containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 2
+          periodSeconds: 2
+        resources:
+          requests:
+            cpu: 100m
+            memory: 96Mi
+            ephemeral-storage: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+            ephemeral-storage: 256Mi
+
+    - name: remove-service
+      resource:
+        action: delete
+        flags:
+          - --ignore-not-found=true
+        manifest: |
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: "{{workflow.name}}"
