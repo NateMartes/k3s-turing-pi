@@ -49,8 +49,19 @@ Creates a complete managed user.
 - Registers the user's Portainer Agent environment.
 - Prints all created resources and the generated password.
 
+Before creating the first user, install the system-wide kubeconfig profile from
+the repository root. This is a one-time host setup step:
+
 ```bash
-sudo ./user-scripts/create-user -u bob -q 5GB
+sudo install -D -o root -g root -m 644 \
+  ./etc/profile.d/k3s-turing-pi-kubeconfig.sh \
+  /etc/profile.d/k3s-turing-pi-kubeconfig.sh
+```
+
+Then create the user:
+
+```bash
+sudo ./scripts/create-user -u bob -q 5GB
 ```
 
 By default, each stage shows a rolling window containing the latest four raw

@@ -239,13 +239,25 @@ architecture.
    sudo ./scripts/enable-quotas /home
    ```
 
-5. Run the create-user script:
+5. Install the system-wide profile that selects each user's namespace-scoped
+   kubeconfig without modifying their shell files:
+
+   ```bash
+   sudo install -D -o root -g root -m 644 \
+     ./etc/profile.d/k3s-turing-pi-kubeconfig.sh \
+     /etc/profile.d/k3s-turing-pi-kubeconfig.sh
+   ```
+
+6. Run the create-user script:
 
    ```bash
    sudo ./scripts/create-user -u <new-user>
    ```
 
-This will make accounts on the services above, automatically.
+This will make accounts on the services above, automatically. On first login,
+the installed system-wide profile selects the user's namespace-scoped
+`~/.kube/config`.
+
 In the event of failures, you can revert the changes:
 
 ```bash

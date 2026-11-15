@@ -42,3 +42,23 @@ sudo ./uninstall-argo-workflow-runner \
 ```
 
 The main `create-user` and `remove-user` commands call these automatically.
+
+## User kubeconfig selection
+
+Before running `create-user` for the first time, install the repository's
+system-wide profile script:
+
+```bash
+sudo install -D -o root -g root -m 644 \
+  ../../etc/profile.d/k3s-turing-pi-kubeconfig.sh \
+  /etc/profile.d/k3s-turing-pi-kubeconfig.sh
+```
+
+For users with a readable `~/.kube/config`, login shells then set `KUBECONFIG`
+to that file instead of allowing the K3s-provided `kubectl` command to fall
+back to the restricted cluster administrator config at
+`/etc/rancher/k3s/k3s.yaml`.
+
+The profile script does not modify individual `.bashrc` or `.profile` files and
+does not override an explicitly set `KUBECONFIG`. Existing sessions must log
+out and back in after the script is first installed.
