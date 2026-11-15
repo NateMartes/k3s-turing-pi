@@ -7,10 +7,18 @@ k3s_service_cidr: "10.43.0.0/16"
 # Override this per host only when its physical interface name is stable.
 k3s_flannel_iface: ""
 
+# setup-dhcp.yml stages configuration without applying it by default because a
+# new DHCP address can terminate Ansible's SSH connection. Override the
+# interface or Netplan definition per host only when automatic discovery is not
+# sufficient. A definition ID can differ from the interface name when Netplan
+# uses a match rule.
+netplan_dhcp_apply: false
+netplan_dhcp_interface: ""
+netplan_dhcp_definition: ""
+
 # Network routed and masqueraded by the node with is_default_gateway: true.
 # Interface names are discovered automatically. Set either override in the
 # inventory only when routing does not make the intended interface clear.
 default_gateway_lan_cidr: "{{ k3s_lan_cidr }}"
 default_gateway_lan_interface: "enp6s0f0"
 default_gateway_wan_interface: "enp6s0f1"
-

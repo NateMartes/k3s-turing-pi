@@ -25,6 +25,9 @@ ansible-playbook <playbook> -i inventory.yml
   block in `/etc/hosts` on every node, using its inventory name.
 - `setup-default-gateway.yml`: Configures the one Ubuntu node marked
   `is_default_gateway: true` to route and NAT IPv4 traffic for the LAN.
+- `setup-dhcp.yml`: Removes static IPv4 addresses, gateways, and routes from
+  each node's LAN interface and enables Netplan DHCPv4. It stages and validates
+  changes by default so an address change does not unexpectedly terminate SSH.
 - `setup-k3s.yml`: Sets up K3s with 1 server node and the rest as agent nodes.
 - `restart-k3s.yml`: Restarts the K3s server and agents one node at a time.
 - `remove-k3s.yml`: Removes K3s from all nodes.
@@ -50,6 +53,9 @@ name.
 | `is_sysadmin_service_node` | Per host | At least one node must be `true`; missing values default to `false`. | Adds the Kubernetes label `sysadmin-services=true`, allowing selected sysadmin workloads to run on the node. Harbor additionally requires that a selected node be AMD64. |
 | `is_desktop_node` | Per host | Optional; defaults to `false`. | Allows `setup-desktop-packages.yml` to modify the node. Nodes without this flag are skipped. |
 | `k3s_flannel_iface` | All nodes or per host | Optional; defaults to an empty string in `group_vars/all.yml`. | Pins Flannel to a stable network interface. Leave empty to let Flannel select the interface that routes the node IP. |
+| `netplan_dhcp_apply` | All nodes | Optional; defaults to `false`. | Applies the validated Netplan DHCP configuration immediately. Leave false to stage it safely. |
+| `netplan_dhcp_interface` | Per host | Optional; discovered from `ansible_host` by default. | Overrides the Linux LAN interface configured by `setup-dhcp.yml`. |
+| `netplan_dhcp_definition` | Per host | Optional; defaults to the selected interface name. | Overrides the Netplan Ethernet definition ID when it differs from the Linux interface name. |
 | `default_gateway_lan_cidr` | All nodes or gateway host | Optional; defaults to `k3s_lan_cidr`. | IPv4 LAN routed and masqueraded by the default gateway. |
 | `default_gateway_lan_interface` | Gateway host | Optional; automatically selects the interface carrying `ansible_host`. | Overrides the gateway's switch/LAN interface. |
 | `default_gateway_wan_interface` | Gateway host | Optional; automatically selects Ubuntu's current default-route interface. | Overrides the gateway's upstream/Internet interface. |
@@ -57,6 +63,40 @@ name.
 The names used as host keys, such as `vision`, are the nodes' Ansible inventory
 names. `distribute-hostnames.yml` installs those names into `/etc/hosts` on
 every node.
+
+## DHCP client configuration
+
+Run the DHCP playbook after the DHCP server reservations have been saved. The
+playbook discovers the interface carrying each node's current `ansible_host`,
+removes static addresses, gateways, and routes from that Netplan definition,
+enables DHCPv4, and runs `netplan generate`. It also stores a one-time backup at
+`/var/backups/netplan-before-ansible-dhcp.tar.gz` on each node.
+
+The safe default writes and validates the persistent configuration without
+changing the live network immediately. The staged configuration will still
+take effect on the next reboot:
+
+```bash
+ansible-playbook -i inventory.yml setup-dhcp.yml
+```
+
+Review the output and the DHCP reservations, then apply a single node with:
+
+```bash
+ansible-playbook -i inventory.yml setup-dhcp.yml \
+  --limit 1wol-hakgwang \
+  -e netplan_dhcp_apply=true
+```
+
+Applying Netplan can terminate the current SSH connection if DHCP assigns a
+different address. Update `ansible_host`, verify the node, and repeat with the
+next node. If discovery is ambiguous, set `netplan_dhcp_interface` for that
+host. Also set
+`netplan_dhcp_definition` when its Netplan definition ID differs from the Linux
+interface name, such as a definition selected with `match.macaddress`.
+
+This playbook makes the DHCP server authoritative for addressing, but it does
+not suppress normal DHCP renewal requests for a client's current lease.
 
 ## Default gateway
 

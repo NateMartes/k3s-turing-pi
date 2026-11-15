@@ -1,0 +1,214 @@
+---
+# Configure the interface carrying ansible_host to obtain its IPv4 settings
+# from DHCP. By default this playbook stages and validates the configuration
+# without applying it, because applying it can change the address used by SSH.
+
+- name: Configure cluster LAN interfaces for DHCP
+  hosts: all
+  become: true
+  gather_facts: true
+  serial: 1
+
+  tasks:
+    - name: Require Ubuntu with Netplan
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Ubuntu'
+          - ansible_facts.pkg_mgr == 'apt'
+        fail_msg: >-
+          setup-dhcp.yml supports Ubuntu nodes managed by Netplan; detected
+          {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}.
+
+    - name: Check for the Netplan command
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/netplan
+          - --help
+      changed_when: false
+
+    - name: Read the node IPv4 interface addresses
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/ip
+          - -o
+          - -4
+          - address
+          - show
+      register: netplan_dhcp_ipv4_addresses
+      changed_when: false
+      when: (netplan_dhcp_interface | length) == 0
+
+    - name: Find the interface carrying the inventory address
+      ansible.builtin.set_fact:
+        netplan_dhcp_detected_interfaces: >-
+          {{
+            netplan_dhcp_ipv4_addresses.stdout_lines
+            | select(
+                'search',
+                ' inet ' ~ (ansible_host | string | regex_escape) ~ '/'
+              )
+            | map(
+                'regex_replace',
+                '^\\d+:\\s+([^\\s@]+)(?:@[^\\s]+)?\\s+.*$',
+                '\\1'
+              )
+            | list
+          }}
+      when: (netplan_dhcp_interface | length) == 0
+
+    - name: Verify the LAN interface was discovered unambiguously
+      ansible.builtin.assert:
+        that:
+          - netplan_dhcp_detected_interfaces | length == 1
+        fail_msg: >-
+          Could not identify exactly one interface with inventory address
+          {{ ansible_host }}. Set netplan_dhcp_interface explicitly for
+          {{ inventory_hostname }}.
+      when: (netplan_dhcp_interface | length) == 0
+
+    - name: Select the Netplan interface and definition
+      ansible.builtin.set_fact:
+        netplan_dhcp_effective_interface: >-
+          {{
+            netplan_dhcp_interface
+            if (netplan_dhcp_interface | length) > 0
+            else netplan_dhcp_detected_interfaces[0]
+          }}
+        netplan_dhcp_effective_definition: >-
+          {{
+            netplan_dhcp_definition
+            if (netplan_dhcp_definition | length) > 0
+            else (
+              netplan_dhcp_interface
+              if (netplan_dhcp_interface | length) > 0
+              else netplan_dhcp_detected_interfaces[0]
+            )
+          }}
+
+    - name: Validate the selected Netplan identifiers
+      ansible.builtin.assert:
+        that:
+          - netplan_dhcp_effective_interface is match('^[A-Za-z0-9_.:@-]+$')
+          - netplan_dhcp_effective_definition is match('^[A-Za-z0-9_-]+$')
+        fail_msg: >-
+          Invalid interface or Netplan definition ID for {{ inventory_hostname }}.
+
+    - name: Verify the selected interface exists
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/ip
+          - link
+          - show
+          - dev
+          - "{{ netplan_dhcp_effective_interface }}"
+      changed_when: false
+
+    - name: Preserve the original Netplan configuration
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/tar
+          - --create
+          - --gzip
+          - --file
+          - /var/backups/netplan-before-ansible-dhcp.tar.gz
+          - --directory
+          - /etc
+          - netplan
+        creates: /var/backups/netplan-before-ansible-dhcp.tar.gz
+
+    - name: Read the effective static Netplan settings
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/netplan
+          - get
+          - "ethernets.{{ netplan_dhcp_effective_definition }}.{{ item }}"
+      loop:
+        - addresses
+        - gateway4
+        - routes
+      register: netplan_dhcp_static_settings
+      changed_when: false
+
+    - name: Remove static addresses, gateway, and routes
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/netplan
+          - set
+          - "ethernets.{{ netplan_dhcp_effective_definition }}.{{ item.item }}=null"
+      loop: "{{ netplan_dhcp_static_settings.results }}"
+      when: (item.stdout | trim) != 'null'
+
+    - name: Read the effective DHCPv4 setting
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/netplan
+          - get
+          - "ethernets.{{ netplan_dhcp_effective_definition }}.dhcp4"
+      register: netplan_dhcp4_setting
+      changed_when: false
+
+    - name: Enable DHCPv4
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/netplan
+          - set
+          - "ethernets.{{ netplan_dhcp_effective_definition }}.dhcp4=true"
+      when: (netplan_dhcp4_setting.stdout | trim) != 'true'
+
+    - name: Check whether cloud-init is installed
+      ansible.builtin.stat:
+        path: /etc/cloud/cloud.cfg.d
+      register: netplan_dhcp_cloud_init
+
+    - name: Prevent cloud-init from replacing the managed network configuration
+      ansible.builtin.copy:
+        dest: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible: setup-dhcp.yml
+          network: {config: disabled}
+      when: netplan_dhcp_cloud_init.stat.isdir | default(false)
+
+    - name: Validate the generated backend configuration
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/netplan
+          - generate
+      changed_when: false
+
+    - name: Read the validated effective Netplan definition
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/netplan
+          - get
+          - "ethernets.{{ netplan_dhcp_effective_definition }}"
+      register: netplan_dhcp_validated_definition
+      changed_when: false
+
+    - name: Verify the effective definition uses only DHCPv4 addressing
+      ansible.builtin.assert:
+        that:
+          - (netplan_dhcp_validated_definition.stdout | from_yaml).dhcp4 | bool
+          - "'addresses' not in (netplan_dhcp_validated_definition.stdout | from_yaml)"
+          - "'gateway4' not in (netplan_dhcp_validated_definition.stdout | from_yaml)"
+          - "'routes' not in (netplan_dhcp_validated_definition.stdout | from_yaml)"
+        fail_msg: >-
+          Netplan validation succeeded, but static IPv4 settings remain on
+          {{ netplan_dhcp_effective_definition }}.
+
+    - name: Report staged DHCP configuration
+      ansible.builtin.debug:
+        msg: >-
+          DHCPv4 configuration for {{ netplan_dhcp_effective_interface }} is
+          valid{{ '' if (netplan_dhcp_apply | bool) else ' and staged but not applied' }}.
+          Original files are backed up at
+          /var/backups/netplan-before-ansible-dhcp.tar.gz.
+
+    - name: Apply Netplan DHCP configuration when requested
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/netplan
+          - apply
+      when: netplan_dhcp_apply | bool
