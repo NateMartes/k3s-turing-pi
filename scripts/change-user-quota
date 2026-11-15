@@ -28,6 +28,7 @@ def main():
     p.add_argument("--k3s-cpu-quota", default=None)
     p.add_argument("--k3s-memory-quota", default=None)
     p.add_argument("--k3s-storage-quota", default=None)
+    p.add_argument("--k3s-gpu-quota", default=None)
     p.add_argument("--harbor-storage-quota", default=None)
     p.add_argument("--harbor-host", default=None)
     p.add_argument("--raw-logs", action="store_true")
@@ -53,6 +54,9 @@ def main():
     storage_quota = args.k3s_storage_quota or prompt_value(
         "K3s storage quota", state.get("k3s_storage_quota") or "10Gi"
     )
+    gpu_quota = args.k3s_gpu_quota or prompt_value(
+        "K3s GPU quota", state.get("k3s_gpu_quota") or "1"
+    )
     harbor_default = bytes_as_quota(
         int(state.get("harbor_storage_quota_bytes") or 10 * 1024 ** 3)
     )
@@ -73,7 +77,8 @@ def main():
     run_plumbing(
         "set-k3s-quota",
         ["-u", username, "--cpu-quota", cpu_quota,
-         "--memory-quota", memory_quota, "--storage-quota", storage_quota],
+         "--memory-quota", memory_quota, "--storage-quota", storage_quota,
+         "--gpu-quota", gpu_quota],
         raw_logs=args.raw_logs,
         label="Updating K3s namespace quota",
     )
@@ -81,6 +86,7 @@ def main():
         "k3s_cpu_quota": cpu_quota,
         "k3s_memory_quota": memory_quota,
         "k3s_storage_quota": storage_quota,
+        "k3s_gpu_quota": gpu_quota,
     })
     save_state(username, state)
 
@@ -109,7 +115,10 @@ def main():
 
     print("\nUpdated quotas")
     print(f"Linux:  {quota_state['quota']} on {quota_state['quota_filesystem']}")
-    print(f"K3s:    CPU {cpu_quota}, memory {memory_quota}, storage {storage_quota}")
+    print(
+        f"K3s:    CPU {cpu_quota}, memory {memory_quota}, "
+        f"storage {storage_quota}, GPUs {gpu_quota}"
+    )
     print(f"Harbor: {harbor_normalized}")
 
 if __name__ == "__main__":

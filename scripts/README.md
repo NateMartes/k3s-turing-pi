@@ -34,8 +34,8 @@ Creates a complete managed user.
   - Rancher
   - Portainer
 - Applies the requested filesystem quota.
-- Prompts for K3s namespace CPU, memory, and storage quotas (defaults: 2 CPU,
-  6Gi memory, and 10Gi storage).
+- Prompts for K3s namespace CPU, memory, storage, and NVIDIA GPU quotas
+  (defaults: 2 CPU, 6Gi memory, 10Gi storage, and 1 GPU).
 - Installs rootless Docker for the user.
 - Starts a Portainer Agent connected to that user's rootless Docker socket.
 - Creates `<username>-namespace` in K3s.
@@ -81,7 +81,8 @@ The K3s resource quotas can also be supplied non-interactively:
 
 ```bash
 sudo ./user-scripts/create-user -u bob -q 5GB \
-  --k3s-cpu-quota 2 --k3s-memory-quota 6Gi --k3s-storage-quota 10Gi
+  --k3s-cpu-quota 2 --k3s-memory-quota 6Gi \
+  --k3s-storage-quota 10Gi --k3s-gpu-quota 1
 ```
 
 Quota may be specified as MB or GB:
@@ -166,7 +167,7 @@ sudo ./disable-quotas /home
 Prompts for every managed quota, using the current stored values as defaults:
 
 - Linux filesystem storage
-- K3s CPU, memory, and storage
+- K3s CPU, memory, storage, and NVIDIA GPUs
 - Harbor project storage
 
 It updates each service and records successful changes in the user's state
@@ -189,6 +190,7 @@ sudo ./user-scripts/change-user-quota -u bob \
   --k3s-cpu-quota 4 \
   --k3s-memory-quota 12Gi \
   --k3s-storage-quota 20Gi \
+  --k3s-gpu-quota 1 \
   --harbor-storage-quota 20GB
 ```
 
@@ -250,8 +252,9 @@ sudo ./plumbing-scripts/uninstall-portainer-agent -u bob
 ### `install-k3s-namespace`
 
 Creates `<username>-namespace`, a service account, RBAC, a `ResourceQuota`, and
-the user's kubeconfig. Defaults are 2 CPU, 6Gi memory, and 10Gi storage across
-pod requests/limits; the storage quota also limits persistent-volume requests.
+the user's kubeconfig. Defaults are 2 CPU, 6Gi memory, 10Gi storage, and 1
+NVIDIA GPU across pod requests/limits; the storage quota also limits
+persistent-volume requests.
 
 ```bash
 sudo ./plumbing-scripts/install-k3s-namespace -u bob
@@ -261,7 +264,7 @@ Override a namespace's quotas when invoking the plumbing command directly:
 
 ```bash
 sudo ./plumbing-scripts/install-k3s-namespace -u bob \
-  --cpu-quota 4 --memory-quota 12Gi --storage-quota 20Gi
+  --cpu-quota 4 --memory-quota 12Gi --storage-quota 20Gi --gpu-quota 1
 ```
 
 ### `uninstall-k3s-namespace`
@@ -307,8 +310,41 @@ Updates only the managed `ResourceQuota` in an existing user's namespace.
 
 ```bash
 sudo ./plumbing-scripts/set-k3s-quota -u bob \
-  --cpu-quota 4 --memory-quota 12Gi --storage-quota 20Gi
+  --cpu-quota 4 --memory-quota 12Gi --storage-quota 20Gi --gpu-quota 1
 ```
+
+### `k3s-taint-gpu-nodes` and `k3s-untaint-gpu-nodes`
+
+Keeps ordinary workloads off nodes that advertise an allocatable
+`nvidia.com/gpu` resource. The taint command discovers those nodes and applies
+`nvidia.com/gpu=true:NoSchedule`:
+
+```bash
+sudo ./scripts/k3s-taint-gpu-nodes
+```
+
+GPU workloads must request a GPU and tolerate that taint:
+
+```yaml
+resources:
+  limits:
+    nvidia.com/gpu: 1
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+```
+
+Remove the managed GPU taint from every node that has it with:
+
+```bash
+sudo ./scripts/k3s-untaint-gpu-nodes
+```
+
+The untaint command discovers nodes by the taint rather than current GPU
+availability, so it still works if the NVIDIA device plugin is temporarily
+unavailable.
 
 ### `install-harbor-account`
 
@@ -521,6 +557,7 @@ They record resource information such as:
 - Linux username and home directory
 - quota
 - K3s namespace
+- K3s CPU, memory, storage, and GPU quotas
 - Harbor project and storage quota
 - Rancher project
 - Portainer environment
@@ -531,7 +568,7 @@ They do **not** contain passwords.
 
 ## Permissions
 
-All command files in `user-scripts/` and `plumbing-scripts/` are marked executable.
+All administrator command files are marked executable.
 
 You can run them directly:
 

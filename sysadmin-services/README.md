@@ -106,6 +106,21 @@ sudo k3s kubectl get nodes \
   -o custom-columns='NAME:.metadata.name,GPU:.status.allocatable.nvidia\.com/gpu'
 ```
 
+After the GPU resource appears, keep workloads that do not explicitly opt in
+off those nodes:
+
+```bash
+sudo ./scripts/k3s-taint-gpu-nodes
+```
+
+This applies `nvidia.com/gpu=true:NoSchedule` to every node with an allocatable
+GPU. GPU workloads must request `nvidia.com/gpu: 1` and include the matching
+toleration. To allow ordinary workloads on those nodes again:
+
+```bash
+sudo ./scripts/k3s-untaint-gpu-nodes
+```
+
 ### 5. Trust the private ingress certificates locally
 
 After all three ingresses are available, discover their private certificate

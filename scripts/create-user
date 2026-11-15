@@ -28,6 +28,8 @@ def main():
                    help="K3s namespace memory quota. Default: 6Gi.")
     p.add_argument("--k3s-storage-quota", default=None,
                    help="K3s namespace persistent and ephemeral storage quota. Default: 10Gi.")
+    p.add_argument("--k3s-gpu-quota", default=None,
+                   help="K3s namespace NVIDIA GPU quota. Default: 1.")
     p.add_argument("--rancher-host", default=DEFAULT_RANCHER_HOST)
     p.add_argument("--harbor-host", default=DEFAULT_HARBOR_HOST)
     p.add_argument("--portainer-host", default=DEFAULT_PORTAINER_HOST)
@@ -71,6 +73,7 @@ def main():
     k3s_storage_quota = (
         args.k3s_storage_quota or input("K3s storage quota [10Gi]: ").strip() or "10Gi"
     )
+    k3s_gpu_quota = args.k3s_gpu_quota or input("K3s GPU quota [1]: ").strip() or "1"
     password = generate_password()
     agent_port = args.agent_port or choose_agent_port()
     agent_addr = args.agent_address or agent_address(agent_port)
@@ -88,6 +91,7 @@ def main():
         "k3s_cpu_quota": k3s_cpu_quota,
         "k3s_memory_quota": k3s_memory_quota,
         "k3s_storage_quota": k3s_storage_quota,
+        "k3s_gpu_quota": k3s_gpu_quota,
         "rancher_user": username,
         "rancher_project": f"{username}-project",
         "harbor_user": username,
@@ -141,6 +145,7 @@ def main():
                 "--cpu-quota", k3s_cpu_quota,
                 "--memory-quota", k3s_memory_quota,
                 "--storage-quota", k3s_storage_quota,
+                "--gpu-quota", k3s_gpu_quota,
             ],
             raw_logs=args.raw_logs,
             label="Creating K3s namespace",

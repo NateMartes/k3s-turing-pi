@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-from resource_quantity import resource_quantity
+from resource_quantity import resource_quantity, whole_resource_quantity
 from platform_common import current_username, get_user, home_path, require_root, run, get_marker, determine_username
 
 MARKER = get_marker("K3s Namespace")
@@ -25,6 +25,8 @@ def main():
                    help="Namespace total memory requests and limits. Default: 6Gi.")
     p.add_argument("--storage-quota", type=resource_quantity, default="10Gi",
                    help="Namespace persistent and ephemeral storage quota. Default: 10Gi.")
+    p.add_argument("--gpu-quota", type=whole_resource_quantity, default="1",
+                   help="Namespace NVIDIA GPU quota. Default: 1.")
     args = p.parse_args()
 
     require_root()
@@ -50,6 +52,7 @@ spec:
     requests.storage: {args.storage_quota}
     requests.ephemeral-storage: {args.storage_quota}
     limits.ephemeral-storage: {args.storage_quota}
+    requests.nvidia.com/gpu: {args.gpu_quota}
 """
     kubectl(["apply", "-f", "-"], input_data=quota)
 
@@ -128,7 +131,8 @@ users:
     print(f"Created namespace: {namespace}")
     print(
         "Applied resource quota: "
-        f"CPU {args.cpu_quota}, memory {args.memory_quota}, storage {args.storage_quota}."
+        f"CPU {args.cpu_quota}, memory {args.memory_quota}, "
+        f"storage {args.storage_quota}, GPUs {args.gpu_quota}."
     )
     print(f"Created kubeconfig: {config_path}")
     print("This kubeconfig authenticates as a namespace-scoped service account.")

@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 from platform_common import determine_username, get_user, require_root, run
-from resource_quantity import resource_quantity
+from resource_quantity import resource_quantity, whole_resource_quantity
 
 
 def kubectl(args, *, input_data=None):
@@ -20,6 +20,7 @@ def main():
     parser.add_argument("--cpu-quota", type=resource_quantity, required=True)
     parser.add_argument("--memory-quota", type=resource_quantity, required=True)
     parser.add_argument("--storage-quota", type=resource_quantity, required=True)
+    parser.add_argument("--gpu-quota", type=whole_resource_quantity, required=True)
     args = parser.parse_args()
 
     require_root()
@@ -40,11 +41,13 @@ spec:
     requests.storage: {args.storage_quota}
     requests.ephemeral-storage: {args.storage_quota}
     limits.ephemeral-storage: {args.storage_quota}
+    requests.nvidia.com/gpu: {args.gpu_quota}
 """
     kubectl(["apply", "-f", "-"], input_data=quota)
     print(
         f"Updated {namespace} quota: CPU {args.cpu_quota}, "
-        f"memory {args.memory_quota}, storage {args.storage_quota}."
+        f"memory {args.memory_quota}, storage {args.storage_quota}, "
+        f"GPUs {args.gpu_quota}."
     )
 
 

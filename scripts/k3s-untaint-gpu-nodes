@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+from k3s_gpu_taints import (
+    GPU_RESOURCE, GPU_TAINT_EFFECT, kubectl, tainted_node_names,
+)
+
+
+def main() -> None:
+    node_names = tainted_node_names()
+    if not node_names:
+        print(f"No nodes have the {GPU_RESOURCE}:{GPU_TAINT_EFFECT} taint.")
+        return
+
+    kubectl(
+        "taint", "nodes", *node_names,
+        f"{GPU_RESOURCE}:{GPU_TAINT_EFFECT}-",
+    )
+    print(f"Untainted {len(node_names)} GPU node(s): {', '.join(node_names)}")
+
+
+if __name__ == "__main__":
+    main()

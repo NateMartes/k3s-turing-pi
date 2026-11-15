@@ -20,3 +20,9 @@ def resource_quantity(value: str) -> str:
     if is_zero:
         raise argparse.ArgumentTypeError("must be greater than zero")
     return value
+
+
+def whole_resource_quantity(value: str) -> str:
+    if not re.fullmatch(r"[1-9][0-9]*", value):
+        raise argparse.ArgumentTypeError("must be a positive whole number")
+    return value
