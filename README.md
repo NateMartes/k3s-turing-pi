@@ -151,8 +151,10 @@ Currently this setup supports:
    ```
 
    The default K3s Pod network is `10.244.0.0/16`, deliberately separate from
-   the `10.42.0.0/24` host LAN. Review `ansible/group_vars/all.yml` before
-   provisioning a cluster on a different LAN.
+   the `10.42.0.0/24` host LAN. K3s uses the managed `1.1.1.1` upstream DNS
+   resolver instead of inheriting node-local resolver settings. Review
+   `ansible/group_vars/all.yml` before provisioning a cluster on a different
+   LAN or with a different DNS provider.
     If in the future you ever add more nodes, just re-run this command to add them
     to the cluster.
 

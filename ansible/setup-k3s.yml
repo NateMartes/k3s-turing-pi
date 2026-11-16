@@ -98,6 +98,15 @@
           {{ groups['k3s_sysadmin_service'] | join(', ') }}
       run_once: true
 
+    - name: Validate the K3s DNS resolver configuration
+      ansible.builtin.assert:
+        that:
+          - k3s_resolv_conf is match('^/')
+          - k3s_dns_servers | length > 0
+        fail_msg: >-
+          k3s_resolv_conf must be an absolute path and k3s_dns_servers must
+          contain at least one upstream DNS server.
+
 - name: Install K3s server
   hosts: k3s_server
   become: true
@@ -148,6 +157,19 @@
         group: root
         mode: "0755"
 
+    - name: Configure K3s upstream DNS resolvers
+      ansible.builtin.copy:
+        dest: "{{ k3s_resolv_conf }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible: setup-k3s.yml
+          {% for dns_server in k3s_dns_servers %}
+          nameserver {{ dns_server }}
+          {% endfor %}
+      notify: Restart K3s server
+
     - name: Configure K3s server
       ansible.builtin.copy:
         dest: /etc/rancher/k3s/config.yaml
@@ -162,6 +184,7 @@
           {% endif %}
           cluster-cidr: "{{ k3s_cluster_cidr }}"
           service-cidr: "{{ k3s_service_cidr }}"
+          resolv-conf: "{{ k3s_resolv_conf }}"
       notify: Restart K3s server
 
     - name: Download K3s installation script
@@ -253,6 +276,19 @@
         group: root
         mode: "0755"
 
+    - name: Configure K3s upstream DNS resolvers
+      ansible.builtin.copy:
+        dest: "{{ k3s_resolv_conf }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible: setup-k3s.yml
+          {% for dns_server in k3s_dns_servers %}
+          nameserver {{ dns_server }}
+          {% endfor %}
+      notify: Restart K3s agent
+
     - name: Configure K3s agent
       ansible.builtin.copy:
         dest: /etc/rancher/k3s/config.yaml
@@ -267,6 +303,7 @@
           {% if k3s_flannel_iface | default('') | length > 0 %}
           flannel-iface: "{{ k3s_flannel_iface }}"
           {% endif %}
+          resolv-conf: "{{ k3s_resolv_conf }}"
       no_log: true
       notify: Restart K3s agent
 

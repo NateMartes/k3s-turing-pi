@@ -119,6 +119,7 @@ Cluster network defaults are stored in `group_vars/all.yml`:
 - Host LAN: `10.42.0.0/24`
 - Pod network: `10.244.0.0/16`
 - Service network: `10.43.0.0/16`
+- Upstream DNS: `1.1.1.1`, through a K3s-managed resolver file
 - Flannel interface: automatically selected from the node route
 
 The setup playbook stops before changing K3s if these networks overlap or a
@@ -126,6 +127,12 @@ node's `ansible_host` address is outside the configured LAN. The Pod network
 supports additional nodes without assigning Pod addresses from the physical
 LAN. Changing the Pod or Service CIDR of an existing cluster requires removing
 and reinstalling K3s; restarting an existing cluster is not a migration.
+
+The playbook writes `k3s_dns_servers` to `k3s_resolv_conf` on every server and
+agent and configures K3s to use that file. This prevents CoreDNS and ordinary
+Pods from inheriting an unusable resolver advertised by a node interface or
+DHCP lease. Change `k3s_dns_servers` in `group_vars/all.yml` if the cluster
+should use a different upstream resolver.
 
 `k3s_flannel_iface` is empty by default so a reboot or a new node with a
 different interface name does not prevent K3s from starting. Set it per host in
