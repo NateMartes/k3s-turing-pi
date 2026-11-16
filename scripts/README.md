@@ -47,7 +47,8 @@ Creates a complete managed user.
 - Adds the user's namespace to the Rancher project.
 - Creates the user's Portainer account.
 - Registers the user's Portainer Agent environment.
-- Prints all created resources and the generated password.
+- Prints all created resources, the generated password, the user's K3s token,
+  and a copy-ready `Bearer <token>` login for the Argo UI.
 
 Before creating the first user, install the system-wide kubeconfig profile from
 the repository root. This is a one-time host setup step:
@@ -63,6 +64,11 @@ Then create the user:
 ```bash
 sudo ./scripts/create-user -u bob -q 5GB
 ```
+
+The final output contains credentials. Share it securely. The K3s token is the
+same service-account token stored in the user's `~/.kube/config` and in their
+namespace's `<username>-user-token` Secret; `create-user` does not save another
+copy in its state file.
 
 By default, each stage shows a rolling window containing the latest four raw
 log lines. If a stage fails, its complete output is printed as a labeled log

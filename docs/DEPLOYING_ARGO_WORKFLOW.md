@@ -3,7 +3,8 @@
 This example installs a shared `ClusterWorkflowTemplate`, submits it into a
 user namespace, and starts a small Flask API that returns `Hello <message>`.
 The API runs for three minutes, exits successfully, and Argo removes its
-temporary Service and completed Pod.
+temporary Service. Completed workflow Pods remain available for log streaming
+for 30 seconds after the workflow finishes and are then removed automatically.
 
 ## Steps
 
@@ -91,8 +92,10 @@ Lifetime: 180 seconds
 ```
 
 Run the printed `curl` command from another terminal before the lifetime ends.
-After three minutes, Flask exits and the workflow removes its Service and Pod.
-The Workflow record remains with status `Succeeded`.
+After three minutes, Flask exits and the workflow removes its Service. Argo
+keeps the workflow Pods for another 30 seconds so the CLI can finish streaming
+their logs, then removes them. The Workflow record remains with status
+`Succeeded`.
 
 The sysadmin Argo installation assigns small default CPU and memory resources
 to Argo's generated executor containers. The example also assigns resources to

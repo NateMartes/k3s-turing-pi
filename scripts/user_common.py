@@ -388,7 +388,12 @@ def agent_address(port: int) -> str:
     return f"{socket.getfqdn()}:{port}"
 
 
-def print_resource_summary(state: dict, *, include_password: Optional[str] = None):
+def print_resource_summary(
+    state: dict,
+    *,
+    include_password: Optional[str] = None,
+    include_k3s_token: Optional[str] = None,
+):
     username = state.get("username", "?")
     print("\nCreated/managed resources")
     print("-------------------------")
@@ -420,3 +425,10 @@ def print_resource_summary(state: dict, *, include_password: Optional[str] = Non
     if include_password is not None:
         print(f"\nGenerated password:   {include_password}")
         print("Store this securely; it is not saved by these scripts.")
+    if include_k3s_token is not None:
+        print(f"\nK3s token:           {include_k3s_token}")
+        print(f"Argo UI login:       Bearer {include_k3s_token}")
+        print(
+            "Share this token securely; it grants the user's Kubernetes "
+            "service-account permissions."
+        )

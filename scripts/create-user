@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import argparse
+import base64
+import json
 import os
 import pwd
 from pathlib import Path
@@ -12,6 +14,32 @@ from user_common import (
     DEFAULT_HARBOR_ADMIN_PASSWORD, DEFAULT_PORTAINER_API_KEY,
     DEFAULT_RANCHER_API_KEY, print_unverified_https_notice,
 )
+
+
+def read_k3s_token(namespace: str, service_account: str) -> str:
+    kubectl_env = os.environ.copy()
+    if not kubectl_env.get("KUBECONFIG"):
+        kubectl_env["KUBECONFIG"] = "/etc/rancher/k3s/k3s.yaml"
+
+    result = run(
+        [
+            "kubectl",
+            "--namespace", namespace,
+            "get", "secret", f"{service_account}-token",
+            "--output", "json",
+        ],
+        capture=True,
+        env=kubectl_env,
+    )
+    secret = json.loads(result.stdout)
+    encoded_token = secret.get("data", {}).get("token")
+    if not encoded_token:
+        die(
+            f"Kubernetes Secret {namespace}/{service_account}-token does not "
+            "contain a token."
+        )
+    return base64.b64decode(encoded_token, validate=True).decode("utf-8")
+
 
 def main():
     p = argparse.ArgumentParser(
@@ -152,6 +180,7 @@ def main():
         )
         state["k3s_namespace"] = True
         save_state(username, state)
+        k3s_token = read_k3s_token(state["namespace"], f"{username}-user")
 
         print("\n[4/7] Installing Argo workflow runner")
         run_plumbing(
@@ -224,7 +253,11 @@ def main():
         print("Run remove-user for this username to clean up the resources that were created.")
         raise
 
-    print_resource_summary(state, include_password=password)
+    print_resource_summary(
+        state,
+        include_password=password,
+        include_k3s_token=k3s_token,
+    )
 
 if __name__ == "__main__":
     main()

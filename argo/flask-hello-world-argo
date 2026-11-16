@@ -16,8 +16,11 @@ spec:
         value: World
 
   podGC:
-    strategy: OnPodCompletion
-    deleteDelayDuration: 0s
+    # Keep the short-lived resource Pods available while `argo submit --log`
+    # follows the workflow. Delete every workflow Pod shortly after the entire
+    # workflow, including its exit handler, has finished.
+    strategy: OnWorkflowCompletion
+    deleteDelayDuration: 30s
 
   templates:
     - name: run

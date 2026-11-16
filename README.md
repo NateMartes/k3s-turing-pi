@@ -270,7 +270,9 @@ architecture.
 
 This will make accounts on the services above, automatically. On first login,
 the installed system-wide profile selects the user's namespace-scoped
-`~/.kube/config`.
+`~/.kube/config`. The command's final summary includes the generated password,
+the user's K3s token, and a copy-ready `Bearer <token>` value for logging in to
+the Argo UI. Treat this output as sensitive.
 
 In the event of failures, you can revert the changes:
 
