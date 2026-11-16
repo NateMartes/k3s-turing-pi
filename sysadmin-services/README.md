@@ -1,8 +1,8 @@
 # Sysadmin Services
 
-This Kustomize bundle deploys Rancher, Harbor, Portainer, cert-manager, and the
-NVIDIA device plugin to the K3s cluster. Run the commands below from the
-repository root.
+This Kustomize bundle deploys Rancher, Harbor, Portainer, Argo Workflows,
+cert-manager, and the NVIDIA device plugin to the K3s cluster. Run the commands
+below from the repository root.
 
 ## Getting Started
 
@@ -17,7 +17,7 @@ Before deploying, ensure that:
   Traefik ingress.
 - An AMD64 K3s node is marked `is_sysadmin_service_node: true` in
   `ansible/inventory.yml`. The K3s setup playbook gives it the
-  `sysadmin-services=true` label used by Harbor and Portainer.
+  `sysadmin-services=true` label used by Harbor, Portainer, and Argo.
 
 The pinned stable Harbor release is scheduled to AMD64 because its complete
 set of component images is not multi-architecture. The registry can still
@@ -33,6 +33,7 @@ export RANCHER_BOOTSTRAP_PASSWORD='replace-with-a-strong-password'
 export HARBOR_HOSTNAME="harbor.10.42.0.31.sslip.io"
 export HARBOR_ADMIN_PASSWORD='replace-with-a-strong-password'
 export PORTAINER_HOSTNAME="portainer.10.42.0.31.sslip.io"
+export ARGO_HOSTNAME="argo.10.42.0.31.sslip.io"
 ```
 
 `HARBOR_ADMIN_PASSWORD` is the initial password for Harbor's built-in `admin`
@@ -44,7 +45,46 @@ Portainer prompts for its initial administrator account when first opened.
 Afterward, create a Portainer API key and store it as `PORTAINER_API_KEY` in
 `etc/sysadmin-env` for the repository's user-management scripts.
 
-### 3. Deploy the services
+`ARGO_HOSTNAME` is the TLS hostname for the Argo Server API and UI. The Argo
+CLI uses this endpoint to submit workflows while Argo Server enforces the
+caller's Kubernetes RBAC permissions.
+
+### 3. Remove a previous standalone Argo installation
+
+If Argo was previously installed into an `argo` namespace with the upstream
+release manifest, remove every namespaced component before deploying it as a
+sysadmin service:
+
+```bash
+sudo k3s kubectl delete namespace argo --ignore-not-found
+```
+
+This command removes everything that lives in the old `argo` namespace. It
+does not remove cluster-scoped resources. If the old installation came from
+Argo's official `install.yaml`, remove its now-unused cluster RBAC and priority
+class too:
+
+```bash
+sudo k3s kubectl delete clusterrolebinding \
+  argo-binding argo-server-binding \
+  --ignore-not-found
+sudo k3s kubectl delete clusterrole \
+  argo-aggregate-to-admin \
+  argo-aggregate-to-edit \
+  argo-aggregate-to-view \
+  argo-cluster-role \
+  argo-server-cluster-role \
+  --ignore-not-found
+sudo k3s kubectl delete priorityclass workflow-controller \
+  --ignore-not-found
+```
+
+Do not delete the Argo CRDs or existing `ClusterWorkflowTemplate` objects. The
+new Helm release adopts and updates the CRDs, and the shared templates remain
+available to users. The cleanup above also leaves the repository's per-user
+runner RBAC intact.
+
+### 4. Deploy the services
 
 Install the configuration with root-only permissions, then run the apply script:
 
@@ -69,7 +109,7 @@ recovering. The script streams the database Pod logs during this wait.
 It also prints the StatefulSet's ready-replica count every 10 seconds so the
 gap between PostgreSQL startup messages and Kubernetes readiness is visible.
 
-### 4. Check the deployment
+### 5. Check the deployment
 
 Inspect the Helm installations and Pods:
 
@@ -79,6 +119,20 @@ sudo k3s kubectl get pods -n sysadmin-system
 sudo k3s kubectl get pods -n cattle-system
 sudo k3s kubectl get pods -n cert-manager
 sudo k3s kubectl get pods -n nvidia-device-plugin
+```
+
+Confirm that Argo's cluster-scoped controller and client-authenticated server
+are ready in `sysadmin-system`:
+
+```bash
+sudo k3s kubectl rollout status \
+  deployment/argo-workflows-workflow-controller \
+  --namespace sysadmin-system
+sudo k3s kubectl rollout status deployment/argo-workflows-server \
+  --namespace sysadmin-system
+sudo k3s kubectl logs deployment/argo-workflows-server \
+  --namespace sysadmin-system \
+  --tail 100 | grep 'authModes="\[client\]"'
 ```
 
 Harbor consists of several Pods and can take longer than Portainer to become
@@ -121,9 +175,9 @@ toleration. To allow ordinary workloads on those nodes again:
 sudo ./scripts/k3s-untaint-gpu-nodes
 ```
 
-### 5. Trust the private ingress certificates locally
+### 6. Trust the private ingress certificates locally
 
-After all three ingresses are available, discover their private certificate
+After all four ingresses are available, discover their private certificate
 authorities and install them on the Ansible control machine:
 
 ```bash
@@ -133,7 +187,7 @@ sudo ./scripts/trust-k3s-crets
 Harbor's official chart generates its ingress certificate automatically. The
 trust script discovers that certificate through the Ingress and its TLS Secret.
 
-### 6. Trust the private CAs on every K3s node
+### 7. Trust the private CAs on every K3s node
 
 Distribute the discovered CAs to every K3s server and agent, then restart their
 K3s services so containerd reloads the system trust store:
@@ -147,11 +201,12 @@ cd ..
 Every node must be able to resolve `HARBOR_HOSTNAME` to the cluster's Traefik
 ingress before it can pull images from the registry.
 
-### 7. Open the services
+### 8. Open the services
 
 - Harbor: `https://<HARBOR_HOSTNAME>`
 - Portainer: `https://<PORTAINER_HOSTNAME>`
 - Rancher: `https://<RANCHER_HOSTNAME>`
+- Argo Workflows: `https://<ARGO_HOSTNAME>`
 
 If your computer cannot reach the cluster network directly, follow the
 [SSH tunneling guide](../docs/TUNNELING.md).
@@ -161,7 +216,7 @@ For Harbor's initial setup, log in as `admin` with
 `RANCHER_BOOTSTRAP_PASSWORD`. Portainer guides you through creation of its
 initial administrator account.
 
-### 8. Log a container client into Harbor
+### 9. Log a container client into Harbor
 
 After installing the private CA, authenticate a Docker-compatible client with:
 
@@ -230,17 +285,20 @@ container signal-denial behavior is available in this
 
 - Harbor: `sysadmin-system`
 - Portainer: `sysadmin-system`
+- Argo Workflows controller and server: `sysadmin-system`
 - Rancher: `cattle-system`
 - cert-manager: `cert-manager`
 - NVIDIA device plugin and Node Feature Discovery: `nvidia-device-plugin`
 
-Rancher remains in `cattle-system` because some Rancher components assume that
-namespace. cert-manager remains in its conventional `cert-manager` namespace
-because it is a singleton cluster dependency with CRDs, webhooks, and
-cluster-scoped RBAC. The NVIDIA device plugin remains in its own namespace
-because it is a cluster-level hardware discovery service.
+Argo uses a cluster-scoped controller even though its control-plane Pods live
+in `sysadmin-system`; user Workflows and their Pods remain in their respective
+user namespaces. Rancher remains in `cattle-system` because some Rancher
+components assume that namespace. cert-manager remains in its conventional
+`cert-manager` namespace because it is a singleton cluster dependency with
+CRDs, webhooks, and cluster-scoped RBAC. The NVIDIA device plugin remains in
+its own namespace because it is a cluster-level hardware discovery service.
 
-All five `HelmChart` resources use this label so they remain logically grouped:
+All six `HelmChart` resources use this label so they remain logically grouped:
 
 ```yaml
 app.kubernetes.io/part-of: sysadmin-system
@@ -251,6 +309,7 @@ app.kubernetes.io/part-of: sysadmin-system
 - Harbor: 2.15.4 (chart 1.19.4)
 - Portainer CE: 2.45.2 (chart 245.2.0)
 - Rancher: 2.15.0 (chart 2.15.1)
+- Argo Workflows: v4.1.6 (chart 2.0.16)
 - cert-manager: v1.21.2
 - NVIDIA device plugin: 0.19.3
 

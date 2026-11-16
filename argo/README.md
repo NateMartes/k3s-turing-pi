@@ -9,42 +9,93 @@ workflows that expose temporary endpoints, but it cannot create Deployments,
 Secrets, or resources in another namespace. The user's existing
 `<username>-user` service account also receives read-only access to
 `ClusterWorkflowTemplate` resources so the Argo CLI can submit a shared
-template directly.
+template through Argo Server.
 
-## Setup
+## System installation
 
-### 1. Install Argo Workflows
+Argo Workflows is a first-class sysadmin service. The K3s Helm controller
+installs the pinned `argo-workflows` chart from
+[`sysadmin-services/argo-workflows.yaml`](../sysadmin-services/argo-workflows.yaml)
+into `sysadmin-system` together with its Traefik Ingress and TLS certificate.
+The chart is configured as a cluster-scoped installation so its controller can
+process Workflows in every user namespace. It must not be changed to
+`singleNamespace` mode.
 
-Choose a stable version from the official
-[Argo Workflows releases](https://github.com/argoproj/argo-workflows/releases/)
-page. Set that version below, create the Argo namespace, and install the
-cluster-scoped release manifest:
+Argo Server uses `client` authentication. Each request therefore uses the
+caller's Kubernetes bearer token and RBAC permissions. Traefik terminates TLS
+at the Ingress before forwarding traffic to the cluster-only Argo Server
+Service. Client authentication requires Kubernetes 1.28 or newer. See the
+official [Argo Server authentication documentation](https://argo-workflows.readthedocs.io/en/latest/argo-server-auth-mode/).
 
-```bash
-ARGO_WORKFLOWS_VERSION=v4.1.6
-
-sudo k3s kubectl create namespace argo
-sudo k3s kubectl apply --server-side \
-  --namespace argo \
-  --filename "https://github.com/argoproj/argo-workflows/releases/download/${ARGO_WORKFLOWS_VERSION}/install.yaml"
-```
-
-If the namespace already exists, the `create namespace` command reports
-`AlreadyExists` and setup can continue. Argo Workflows v4 requires server-side
-apply for its full CRDs because a client-side last-applied annotation can exceed
-Kubernetes' annotation size limit.
-
-Wait for the controller and server, then inspect their Pods:
+Configure `ARGO_HOSTNAME` in `etc/sysadmin-env`, install the configuration, and
+deploy the complete sysadmin-services bundle:
 
 ```bash
-sudo k3s kubectl rollout status deployment/workflow-controller \
-  --namespace argo
-sudo k3s kubectl rollout status deployment/argo-server \
-  --namespace argo
-sudo k3s kubectl get pods --namespace argo
+sudo install -D -o root -g root -m 600 \
+  ./etc/sysadmin-env /etc/k3s-turing-pi/sysadmin-env
+sudo ./scripts/apply-sysadmin-services
 ```
 
-### 2. Create the user's namespace
+Verify the Helm release, controller, server, client authentication, and
+Ingress:
+
+```bash
+sudo k3s kubectl get helmchart argo-workflows --namespace kube-system
+sudo k3s kubectl rollout status \
+  deployment/argo-workflows-workflow-controller \
+  --namespace sysadmin-system
+sudo k3s kubectl rollout status deployment/argo-workflows-server \
+  --namespace sysadmin-system
+sudo k3s kubectl logs deployment/argo-workflows-server \
+  --namespace sysadmin-system \
+  --tail 100 | grep 'authModes="\[client\]"'
+sudo k3s kubectl get ingress,certificate --namespace sysadmin-system
+```
+
+Install the generated private certificate in the hosts' shared trust store:
+
+```bash
+sudo ./scripts/trust-k3s-crets
+```
+
+Use the Argo CLI's `--argo-http1` option with this standard HTTP Ingress. This
+avoids requiring the Ingress route to support end-to-end gRPC over h2c.
+
+### Migrating the old installation
+
+If Argo was previously installed from the upstream release manifest, delete
+its old namespace before applying the sysadmin-services bundle:
+
+```bash
+sudo k3s kubectl delete namespace argo --ignore-not-found
+```
+
+Deleting the namespace removes every namespaced Deployment, Service,
+ServiceAccount, Role, RoleBinding, ConfigMap, Secret, and Pod in it. It does not
+remove cluster-scoped resources. If the old installation came from Argo's
+official `install.yaml`, remove its now-unused cluster RBAC and priority class:
+
+```bash
+sudo k3s kubectl delete clusterrolebinding \
+  argo-binding argo-server-binding \
+  --ignore-not-found
+sudo k3s kubectl delete clusterrole \
+  argo-aggregate-to-admin \
+  argo-aggregate-to-edit \
+  argo-aggregate-to-view \
+  argo-cluster-role \
+  argo-server-cluster-role \
+  --ignore-not-found
+sudo k3s kubectl delete priorityclass workflow-controller \
+  --ignore-not-found
+```
+
+Do not delete the Argo CRDs or existing `ClusterWorkflowTemplate` objects. The
+Helm release adopts and updates the CRDs, and the shared templates remain
+available to users. The cleanup above also leaves the repository's per-user
+runner RBAC intact.
+
+### Create the user's namespace
 
 The workflow runner is installed after the user's namespace exists. The main
 `create-user` command performs both steps automatically. When using the
@@ -65,7 +116,7 @@ sudo install -D -o root -g root -m 644 \
   /etc/profile.d/k3s-turing-pi-kubeconfig.sh
 ```
 
-### 3. Deploy the workflow runner
+### Deploy the workflow runner
 
 Pass both the Linux username and target namespace explicitly:
 

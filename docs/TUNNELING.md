@@ -2,7 +2,7 @@
 
 Use an SSH tunnel when your computer can reach an SSH host in the cluster but
 cannot reach the cluster network directly. One dynamic tunnel can provide
-access to Rancher, Harbor, and Portainer.
+access to Rancher, Harbor, Portainer, and Argo Workflows.
 
 The tunnel creates a local SOCKS5 proxy. Your browser sends its web requests
 through the SSH host. The SSH host then resolves the service hostnames and
@@ -86,6 +86,7 @@ Open each service with its configured hostname:
 - Harbor: `https://<HARBOR_HOSTNAME>`
 - Portainer: `https://<PORTAINER_HOSTNAME>`
 - Rancher: `https://<RANCHER_HOSTNAME>`
+- Argo Workflows: `https://<ARGO_HOSTNAME>`
 
 Get the actual values from `etc/sysadmin-env`. Keep the `https://` scheme and
 do not replace the service hostname with `localhost`. The ingress uses the

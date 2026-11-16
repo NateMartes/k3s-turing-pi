@@ -26,7 +26,7 @@ Currently this setup supports:
 ## Directories
 
 - `ansible`: Automated playbooks to install and set up software.
-- `argo`: Namespace-scoped service account and RBAC for Argo workflow Pods.
+- `argo`: Per-user workflow runner RBAC and shared workflow examples.
 - `etc`: Templates for files distributed to each node's `/etc` directory.
 - `scripts`: Programs to set up software for users and system-wide use.
 - `sysadmin-services`: Services running on this cluster, deployed via Kubernetes.
@@ -158,6 +158,18 @@ Currently this setup supports:
 
 10. Deploy sysadmin services to K3s:
 
+   Argo Workflows runs as a cluster-scoped controller and client-authenticated
+   server in `sysadmin-system`. If an older standalone installation exists,
+   remove its namespaced components before applying the sysadmin bundle:
+
+   ```bash
+   sudo k3s kubectl delete namespace argo --ignore-not-found
+   ```
+
+   If that installation came from Argo's official `install.yaml`, also remove
+   its obsolete cluster RBAC by following the
+   [Argo migration instructions](argo/README.md#migrating-the-old-installation).
+
    ```bash
    sudo install -D -o root -g root -m 600 \
      ./etc/sysadmin-env /etc/k3s-turing-pi/sysadmin-env
@@ -177,11 +189,11 @@ Currently this setup supports:
    `is_sysadmin_service_node: true` in `ansible/inventory.yml`. The K3s setup
    playbook gives those nodes the `sysadmin-services=true` Kubernetes label.
 
-   The Rancher, Harbor, and Portainer domain names come from
-   `RANCHER_HOSTNAME`, `HARBOR_HOSTNAME`, and `PORTAINER_HOSTNAME` in
-   `/etc/k3s-turing-pi/sysadmin-env`. Harbor's initial `admin` password comes from
-   `HARBOR_ADMIN_PASSWORD`; Rancher's initial administrator password comes from
-   `RANCHER_BOOTSTRAP_PASSWORD`.
+   The Rancher, Harbor, Portainer, and Argo Server domain names come from
+   `RANCHER_HOSTNAME`, `HARBOR_HOSTNAME`, `PORTAINER_HOSTNAME`, and
+   `ARGO_HOSTNAME` in `/etc/k3s-turing-pi/sysadmin-env`. Harbor's initial
+   `admin` password comes from `HARBOR_ADMIN_PASSWORD`; Rancher's initial
+   administrator password comes from `RANCHER_BOOTSTRAP_PASSWORD`.
 
 11. Trust the certificates from the sysadmin K3s services, including Harbor's
    private CA, and distribute them to every K3s node:

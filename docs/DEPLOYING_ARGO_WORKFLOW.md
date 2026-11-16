@@ -10,22 +10,39 @@ temporary Service and completed Pod.
 ### 1. Check the prerequisites
 
 Run these commands from the repository root. Confirm that the Argo controller
-is running, the Argo CLI is installed, and the target namespace contains
-`argo-workflow-runner`:
+and Argo Server are running, Argo Server uses `client` authentication, the
+Argo CLI is installed, the server endpoint configured during Argo setup is
+reachable, and the target namespace contains `argo-workflow-runner`:
 
 ```bash
 USERNAME=martesn
 WORKFLOW_NAMESPACE="${USERNAME}-namespace"
+ARGO_HOSTNAME="argo.10.42.0.31.sslip.io"
 
-sudo kubectl get deployment workflow-controller --namespace argo
+sudo kubectl get deployment argo-workflows-workflow-controller \
+  --namespace sysadmin-system
+sudo kubectl get deployment argo-workflows-server \
+  --namespace sysadmin-system
+sudo kubectl logs deployment/argo-workflows-server \
+  --namespace sysadmin-system \
+  --tail 100 | grep 'authModes="\[client\]"'
+curl --silent --show-error \
+  --output /dev/null \
+  "https://${ARGO_HOSTNAME}/"
 argo version --client
 kubectl get serviceaccount argo-workflow-runner \
   --namespace "${WORKFLOW_NAMESPACE}"
 kubectl auth can-i get clusterworkflowtemplates.argoproj.io
 ```
 
-The final command should return `yes`. For users created before the current
-runner permissions were added, an administrator can rerun
+The log check should print a startup line containing `authModes="[client]"`,
+and the final command should return `yes`. If Argo Server is not in client
+mode, follow the client-authentication setup in
+[Argo Workflow Runner](../argo/README.md#system-installation). If the endpoint
+check fails, verify the Argo Ingress and certificate in `sysadmin-system` as
+described in that setup.
+For users created before the current runner permissions were added, an
+administrator can rerun
 `scripts/plumbing-scripts/install-argo-workflow-runner` for that user.
 
 ### 2. Install the shared Flask workflow template
@@ -44,11 +61,19 @@ its logs:
 
 ```bash
 argo submit \
+  --argo-server "${ARGO_HOSTNAME}:443" \
+  --argo-http1 \
   --from clusterworkflowtemplate/flask-hello-world \
   --namespace "${WORKFLOW_NAMESPACE}" \
   --parameter 'message=Turing Pi' \
   --log
 ```
+
+`--argo-server` is required here. Without it, the CLI uses direct Kubernetes
+API mode and Argo CLI v4.1.6 cannot resolve this cluster workflow template
+during submission. The CLI reads the user's Kubernetes bearer token from the
+active kubeconfig and sends it to Argo Server, which enforces that user's
+Kubernetes RBAC permissions.
 
 ### 4. Use the printed URL
 

@@ -528,6 +528,9 @@ plumbing scripts. Explicit hostname command-line options still take precedence;
 commands that have neither a configured variable nor an explicit/stored
 hostname exit with an error.
 
+The same file stores `ARGO_HOSTNAME` for the administrator-managed Argo
+Workflows Ingress. The user-management commands do not require that value.
+
 Whenever a value changes, update the repository's `etc/sysadmin-env` and rerun the
 `install` command above. The next administration command will read the new
 values from the installed file.

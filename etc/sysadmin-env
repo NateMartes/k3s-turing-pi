@@ -1,5 +1,6 @@
 export PORTAINER_API_KEY="changeme"
 export PORTAINER_HOSTNAME="portainer.10.42.0.31.sslip.io"
+export ARGO_HOSTNAME="argo.10.42.0.31.sslip.io"
 export HARBOR_ADMIN_PASSWORD='changeme'
 export HARBOR_HOSTNAME="harbor.10.42.0.31.sslip.io"
 export RANCHER_BOOTSTRAP_PASSWORD='changeme'
