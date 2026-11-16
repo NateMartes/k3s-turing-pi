@@ -93,3 +93,9 @@ Lifetime: 180 seconds
 Run the printed `curl` command from another terminal before the lifetime ends.
 After three minutes, Flask exits and the workflow removes its Service and Pod.
 The Workflow record remains with status `Succeeded`.
+
+The sysadmin Argo installation assigns small default CPU and memory resources
+to Argo's generated executor containers. The example also assigns resources to
+the generated `main` containers used by its Kubernetes resource templates.
+These settings are required because every user namespace quota requires CPU
+and memory requests and limits on every container.

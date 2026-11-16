@@ -34,6 +34,18 @@ spec:
                   value: "{{tasks.create-service.outputs.parameters.node-port}}"
 
     - name: create-service
+      # Resource templates run through an Argo-generated `main` container.
+      # User namespace quotas require explicit CPU and memory values.
+      podSpecPatch: |
+        containers:
+          - name: main
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                cpu: 100m
+                memory: 64Mi
       resource:
         action: create
         setOwnerReference: true
@@ -161,6 +173,16 @@ spec:
             ephemeral-storage: 256Mi
 
     - name: remove-service
+      podSpecPatch: |
+        containers:
+          - name: main
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                cpu: 100m
+                memory: 64Mi
       resource:
         action: delete
         flags:

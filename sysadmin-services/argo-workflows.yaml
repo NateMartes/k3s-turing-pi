@@ -31,6 +31,18 @@ spec:
       rbac:
         create: false
 
+    # Every user namespace has a ResourceQuota that requires CPU and memory
+    # requests and limits on every container. Apply small defaults to Argo's
+    # generated init and wait executor containers.
+    executor:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+
     controller:
       # An empty list leaves the cluster-scoped controller watching every
       # namespace without creating a chart-owned runner in `default`.
