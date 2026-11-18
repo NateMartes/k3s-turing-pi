@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import platform
 import shutil
 import tempfile
 from pathlib import Path
@@ -23,6 +24,30 @@ from platform_common import (
 
 SUBID_COUNT = 65536
 MARKER = get_marker("Docker Rootless")
+COMPOSE_MANAGED_MARKER = ".docker-compose-managed-by-k3s-turing-pi"
+
+
+def compose_architecture() -> str:
+    machine = platform.machine().lower()
+    architectures = {
+        "amd64": "x86_64",
+        "x86_64": "x86_64",
+        "arm64": "aarch64",
+        "aarch64": "aarch64",
+        "armv7": "armv7",
+        "armv7l": "armv7",
+        "ppc64le": "ppc64le",
+        "riscv64": "riscv64",
+        "s390x": "s390x",
+    }
+
+    try:
+        return architectures[machine]
+    except KeyError:
+        die(
+            f"Docker Compose does not provide a supported binary for "
+            f"architecture {machine!r}."
+        )
 
 
 def has_subid(path: str, username: str) -> bool:
@@ -194,6 +219,68 @@ def install_rootless_binaries(username: str) -> None:
         installer.unlink(missing_ok=True)
 
 
+def compose_is_available(username: str) -> bool:
+    result = run_as_target_user(
+        username,
+        ["docker", "compose", "version"],
+        check=False,
+        capture=True,
+    )
+    return result.returncode == 0
+
+
+def install_compose_plugin(username: str) -> None:
+    if compose_is_available(username):
+        info(f"Docker Compose is already available for {username}")
+        return
+
+    user = get_user(username)
+    docker_config = home_path(username) / ".docker"
+    plugin_dir = docker_config / "cli-plugins"
+    plugin_path = plugin_dir / "docker-compose"
+    marker_path = plugin_dir / COMPOSE_MANAGED_MARKER
+    architecture = compose_architecture()
+    download_url = (
+        "https://github.com/docker/compose/releases/latest/download/"
+        f"docker-compose-linux-{architecture}"
+    )
+
+    info(f"Installing Docker Compose plugin for {username}")
+
+    with tempfile.NamedTemporaryFile(
+        prefix="docker-compose-",
+        delete=False,
+    ) as file:
+        installer = Path(file.name)
+
+    try:
+        run([
+            "curl",
+            "-fsSL",
+            download_url,
+            "-o",
+            str(installer),
+        ])
+
+        docker_config.mkdir(mode=0o700, exist_ok=True)
+        plugin_dir.mkdir(mode=0o700, exist_ok=True)
+        shutil.copyfile(installer, plugin_path)
+        plugin_path.chmod(0o755)
+        marker_path.write_text(f"Installed from {download_url}\n")
+        marker_path.chmod(0o600)
+
+        for path in (docker_config, plugin_dir, plugin_path, marker_path):
+            os.chown(path, user.pw_uid, user.pw_gid)
+    finally:
+        installer.unlink(missing_ok=True)
+
+    if not compose_is_available(username):
+        die(
+            "Docker Compose was downloaded, but "
+            f"'docker compose version' failed for {username}."
+        )
+
+
 def configure_rootless_docker(username: str) -> None:
     tool = find_setup_tool(username)
 
@@ -322,11 +409,12 @@ def main() -> None:
     ensure_user_runtime(username)
 
     configure_rootless_docker(username)
+    install_compose_plugin(username)
     enable_docker_service(username)
     update_profile(username)
 
     print()
-    print(f"Rootless Docker configured for {username}.")
+    print(f"Rootless Docker and Docker Compose configured for {username}.")
     print(f"Socket: {docker_socket(username)}")
     print(
         "The user should log out and back in, "

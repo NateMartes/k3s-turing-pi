@@ -36,7 +36,7 @@ Creates a complete managed user.
 - Prompts for K3s namespace CPU, memory, storage, and NVIDIA GPU quotas
   (defaults: 2 CPU, 6Gi memory, 10Gi storage, and 1 GPU) unless `--no-quota`
   is set.
-- Installs rootless Docker for the user.
+- Installs rootless Docker and the Docker Compose CLI plugin for the user.
 - Starts a Portainer Agent connected to that user's rootless Docker socket.
 - Creates `<username>-namespace` in K3s.
 - Installs `argo-workflow-runner`, its executor and temporary Service RBAC, and
@@ -257,7 +257,9 @@ These commands are normally called automatically by the main user scripts.
 
 ### `install-docker-rootless`
 
-Installs and configures rootless Docker for a Linux user.
+Installs and configures rootless Docker and the `docker compose` CLI plugin for
+a Linux user. Compose is installed under the user's Docker CLI plugin directory
+and is available through commands such as `docker compose up`.
 
 On hosts where AppArmor blocks unprivileged user namespaces, it creates the
 managed `/etc/sysctl.d/90-k3s-turing-pi-rootless-docker-apparmor.conf` override
@@ -271,7 +273,8 @@ sudo ./plumbing-scripts/install-docker-rootless -u bob
 
 ### `uninstall-docker-rootless`
 
-Removes the user's rootless Docker service.
+Removes the user's rootless Docker service and the Docker Compose plugin
+installed by this project. Pre-existing Compose installations are preserved.
 
 ```bash
 sudo ./plumbing-scripts/uninstall-docker-rootless -u bob

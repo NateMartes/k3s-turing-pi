@@ -290,7 +290,8 @@ architecture.
 This will make accounts on the services above, automatically. On first login,
 the installed system-wide profile selects the user's namespace-scoped
 `~/.kube/config`. The command's final summary groups the URL, username,
-password or token, and relevant project or namespace for Linux/rootless Docker,
+password or token, and relevant project or namespace for Linux/rootless Docker
+with Docker Compose,
 K3s, Argo Workflows, Harbor, Rancher, and Portainer. Treat this output as
 sensitive.
 

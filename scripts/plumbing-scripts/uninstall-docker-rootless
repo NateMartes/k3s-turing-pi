@@ -19,6 +19,7 @@ from platform_common import (
 
 
 MARKER = get_marker("Docker Rootless")
+COMPOSE_MANAGED_MARKER = ".docker-compose-managed-by-k3s-turing-pi"
 
 
 def determine_username(argument: str | None) -> str:
@@ -122,6 +123,26 @@ def remove_user_binaries(username: str) -> None:
         if path.exists() or path.is_symlink():
             print(f"Removing {path}")
             path.unlink()
+
+
+def remove_managed_compose_plugin(username: str) -> None:
+    plugin_dir = home_path(username) / ".docker/cli-plugins"
+    plugin_path = plugin_dir / "docker-compose"
+    marker_path = plugin_dir / COMPOSE_MANAGED_MARKER
+
+    if not marker_path.exists():
+        return
+
+    info(f"Removing managed Docker Compose plugin for {username}")
+    plugin_path.unlink(missing_ok=True)
+    marker_path.unlink(missing_ok=True)
+
+    try:
+        plugin_dir.rmdir()
+        plugin_dir.parent.rmdir()
+    except OSError:
+        # Preserve other Docker CLI plugins and user configuration.
+        pass
 
 
 def remove_systemd_files(username: str) -> None:
@@ -253,6 +274,7 @@ def main() -> None:
 
     remove_systemd_files(username)
     remove_user_binaries(username)
+    remove_managed_compose_plugin(username)
     remove_profile_configuration(username)
     remove_runtime_socket(username)
     cleanup_rootless_docker_apparmor(username)
@@ -263,7 +285,7 @@ def main() -> None:
 
     print()
     print(f"Rootless Docker removed for {username}.")
-    print("User-local Docker binaries were removed.")
+    print("User-local Docker and managed Docker Compose binaries were removed.")
 
     if args.purge_data:
         print("Docker data was also removed.")
