@@ -107,13 +107,17 @@ sudo ./scripts/plumbing-scripts/install-k3s-namespace --username bob
 ```
 
 The namespace installer also creates the user's `~/.kube/config`. Before
-creating users, install the repository's system-wide profile once so `kubectl`
-selects that namespace-scoped config on login:
+creating users, install the repository's system-wide profiles once so `kubectl`
+selects that namespace-scoped config and the Argo CLI selects the cluster's
+Argo Server on login:
 
 ```bash
 sudo install -D -o root -g root -m 644 \
   ./etc/profile.d/k3s-turing-pi-kubeconfig.sh \
   /etc/profile.d/k3s-turing-pi-kubeconfig.sh
+sudo install -D -o root -g root -m 644 \
+  ./etc/profile.d/k3s-turing-pi-argo-server.sh \
+  /etc/profile.d/k3s-turing-pi-argo-server.sh
 ```
 
 ### Deploy the workflow runner

@@ -50,13 +50,16 @@ Creates a complete managed user.
 - Prints all created resources followed by grouped login details for
   Linux/rootless Docker, K3s, Argo Workflows, Harbor, Rancher, and Portainer.
 
-Before creating the first user, install the system-wide kubeconfig profile from
-the repository root. This is a one-time host setup step:
+Before creating the first user, install the system-wide kubeconfig and Argo
+Server profiles from the repository root. These are one-time host setup steps:
 
 ```bash
 sudo install -D -o root -g root -m 644 \
   ./etc/profile.d/k3s-turing-pi-kubeconfig.sh \
   /etc/profile.d/k3s-turing-pi-kubeconfig.sh
+sudo install -D -o root -g root -m 644 \
+  ./etc/profile.d/k3s-turing-pi-argo-server.sh \
+  /etc/profile.d/k3s-turing-pi-argo-server.sh
 ```
 
 Then create the user:

@@ -48,12 +48,15 @@ The main `create-user` and `remove-user` commands call these automatically.
 ## User kubeconfig selection
 
 Before running `create-user` for the first time, install the repository's
-system-wide profile script:
+system-wide profile scripts:
 
 ```bash
 sudo install -D -o root -g root -m 644 \
   ../../etc/profile.d/k3s-turing-pi-kubeconfig.sh \
   /etc/profile.d/k3s-turing-pi-kubeconfig.sh
+sudo install -D -o root -g root -m 644 \
+  ../../etc/profile.d/k3s-turing-pi-argo-server.sh \
+  /etc/profile.d/k3s-turing-pi-argo-server.sh
 ```
 
 For users with a readable `~/.kube/config`, login shells then set `KUBECONFIG`
@@ -64,3 +67,7 @@ back to the restricted cluster administrator config at
 The profile script does not modify individual `.bashrc` or `.profile` files and
 does not override an explicitly set `KUBECONFIG`. Existing sessions must log
 out and back in after the script is first installed.
+
+The Argo profile sets `ARGO_SERVER` to the cluster's Argo Workflows endpoint
+unless the user has already selected another endpoint. It also takes effect on
+the user's next login.

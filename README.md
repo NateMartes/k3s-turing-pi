@@ -262,7 +262,16 @@ architecture.
      /etc/profile.d/k3s-turing-pi-kubeconfig.sh
    ```
 
-6. Run the create-user script:
+6. Install the system-wide profile that configures the Argo CLI to use the
+   cluster's Argo Server without modifying users' shell files:
+
+   ```bash
+   sudo install -D -o root -g root -m 644 \
+     ./etc/profile.d/k3s-turing-pi-argo-server.sh \
+     /etc/profile.d/k3s-turing-pi-argo-server.sh
+   ```
+
+7. Run the create-user script:
 
    ```bash
    sudo ./scripts/create-user -u <new-user>
