@@ -130,8 +130,7 @@ def main():
         https_services.append(("Portainer", args.portainer_host))
     print_unverified_https_notice(https_services)
     username = validate_username(args.username)
-    if user_exists(username):
-        die(f"Linux user {username!r} already exists.")
+    linux_user_preexists = user_exists(username)
     if state_path(username).exists():
         die(f"A state file already exists for {username}; remove/reconcile it first.")
 
@@ -197,12 +196,16 @@ def main():
         "harbor_account": False,
         "rancher_account": False,
         "portainer_account": False,
+        "linux_user_created": not linux_user_preexists,
     }
 
     try:
-        print(f"Creating Linux user {username}...")
-        run(["useradd", "--create-home", "--shell", args.shell, username])
-        run(["chpasswd"], input_data=f"{username}:{password}\n")
+        if linux_user_preexists:
+            print(f"Using existing Linux user {username}...")
+        else:
+            print(f"Creating Linux user {username}...")
+            run(["useradd", "--create-home", "--shell", args.shell, username])
+            run(["chpasswd"], input_data=f"{username}:{password}\n")
         u = pwd.getpwnam(username)
         state["uid"] = u.pw_uid
         state["home"] = u.pw_dir
@@ -346,6 +349,7 @@ def main():
         state,
         include_password=password,
         include_k3s_token=k3s_token,
+        include_linux_password=not linux_user_preexists,
     )
 
 if __name__ == "__main__":

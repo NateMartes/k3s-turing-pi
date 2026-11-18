@@ -64,6 +64,7 @@ def main():
         created_services = set(SELECTABLE_SERVICES) - set(state.get("excluded", []))
     requested_services = set(args.only)
     services_to_remove = created_services & requested_services
+    linux_user_created = state.get("linux_user_created", True)
 
     # Included services are cleaned up even when provisioning failed before their
     # completion flag was saved, because a lower-level installer may have made
@@ -121,9 +122,13 @@ def main():
 
     print(f"Resources associated with {username}")
     print("--------------------------------")
-    print(f"Linux account:          {'present' if user_exists(username) else 'not found'}")
+    linux_account_status = "present" if user_exists(username) else "not found"
+    if not linux_user_created:
+        linux_account_status += " (pre-existing; preserve)"
+    print(f"Linux account:          {linux_account_status}")
     print(f"Home directory:         {home or 'unknown'}")
-    print(f"Home data action:       {'DELETE' if args.purge_data else 'PRESERVE'}")
+    delete_home = args.purge_data and linux_user_created
+    print(f"Home data action:       {'DELETE' if delete_home else 'PRESERVE'}")
     print(f"Removal selection:      {', '.join(sorted(requested_services))}")
     print(
         "Rootless Docker:        "
@@ -282,7 +287,7 @@ def main():
             f"({skip_reason('docker_rootless')})"
         )
 
-    if user_exists(username):
+    if user_exists(username) and linux_user_created:
         print("\nRemoving Linux account...")
 
         print("\nTerminating user processes...")
@@ -308,8 +313,10 @@ def main():
             cmd.append("--remove")
         cmd.append(username)
         run(cmd, check=False)
+    elif user_exists(username):
+        print(f"\nPreserving pre-existing Linux account {username}.")
 
-    if args.purge_data and home and Path(home).exists():
+    if delete_home and home and Path(home).exists():
         # userdel -r may leave a home behind if it is on an unusual mount.
         import shutil
         shutil.rmtree(home, ignore_errors=True)
@@ -328,9 +335,10 @@ def main():
 
     print(f"\nRemoved selected platform resources for {username}.")
     print(f"Removal selection: {', '.join(sorted(requested_services))}.")
-    if not args.purge_data and home:
+    if not delete_home and home:
         print(f"Home data was preserved at {home}.")
-        print("Use --purge-data if you intend to delete user-owned local data.")
+        if linux_user_created:
+            print("Use --purge-data if you intend to delete user-owned local data.")
     if remaining_services:
         print(
             f"State retained for remaining services at {state_path(username)}."

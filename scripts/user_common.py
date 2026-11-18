@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from config_env import SYSADMIN_ENV, load_sysadmin_env_or_exit
+from password_setup import MIN_PASSWORD_LENGTH, SYMBOLS, WORDS
 
 
 load_sysadmin_env_or_exit()
@@ -51,18 +52,6 @@ SELECTABLE_SERVICE_DEPENDENCIES = {
     "argo-workflow-runner": ("k3s-namespace",),
     "k3s-namespace": (),
 }
-
-WORDS = (
-    "Acacia Almond Alpine Anchor Autumn Bamboo Beacon Birchwood Blossom Bronze "
-    "Canyon Cedarwood Cherry Circle Citrus Cobalt Cometary Copper Crystal Desert "
-    "Dragon Emerald Falcon Forest Galaxy Garden Glacier Golden Harbor Hazelnut "
-    "Island Ivorywood Jasmine Juniper Lantern Lavender Marble Meadow Meteor Mosaic "
-    "Nectar Oceanic Orchid Pebble Planet Quartz Rabbit Rocket Silver Spruce Summit "
-    "Sunrise Thunder Timber Valley Velvet Violet Willow Winter Zenith"
-).split()
-SYMBOLS = "!@#$%&*+-_=?"
-MIN_PASSWORD_LENGTH = 15
-
 
 def parse_services(value: str) -> frozenset[str]:
     services = [service.strip() for service in value.split(",")]
@@ -449,11 +438,15 @@ def print_resource_summary(
     *,
     include_password: Optional[str] = None,
     include_k3s_token: Optional[str] = None,
+    include_linux_password: bool = True,
 ):
     username = state.get("username", "?")
     print("\nCreated/managed resources")
     print("-------------------------")
-    print(f"Linux user:           {username}")
+    linux_user = username
+    if state.get("linux_user_created") is False:
+        linux_user += " (pre-existing)"
+    print(f"Linux user:           {linux_user}")
     print(f"Home directory:       {state.get('home', '?')}")
     print(f"Quota:                {state.get('quota', '?')} on {state.get('quota_filesystem', '?')}")
     if state.get("services"):
@@ -516,7 +509,12 @@ def print_resource_summary(
             linux_group,
             [
                 ("Username", username),
-                ("Password", include_password),
+                (
+                    "Password",
+                    include_password
+                    if include_linux_password
+                    else "unchanged (pre-existing account)",
+                ),
                 ("Home", state.get("home", "?")),
             ],
         )

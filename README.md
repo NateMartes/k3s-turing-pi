@@ -268,6 +268,10 @@ architecture.
    sudo ./scripts/create-user -u <new-user>
    ```
 
+   Existing Linux accounts are reused without changing their password. They
+   are recorded as pre-existing so `remove-user` preserves the Linux account
+   and home directory.
+
    To create resources only for selected services or features, pass a
    comma-separated list with `--only` (or `-o`):
 
