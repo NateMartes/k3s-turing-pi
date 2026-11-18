@@ -22,3 +22,7 @@ if [ -z "${ARGO_TOKEN:-}" ] && command -v kubectl >/dev/null 2>&1; then
     fi
     unset _K3S_TURING_PI_KUBECONFIG
 fi
+
+if [ -z "${ARGO_HTTP1:-}" ]; then
+    export ARGO_HTTP1=true
+fi
