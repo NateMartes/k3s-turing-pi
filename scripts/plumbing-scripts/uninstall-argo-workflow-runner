@@ -49,6 +49,7 @@ def main():
         [
             "delete",
             f"rolebinding/{runner}",
+            f"rolebinding/{runner}-namespace-admin",
             f"role/{runner}",
             f"serviceaccount/{runner}",
             "--namespace",

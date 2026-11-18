@@ -24,9 +24,9 @@ explicit `-H`/`--hostname` argument is provided.
 
 ## Argo workflow runner
 
-Install the namespace-scoped Argo executor identity, temporary Service
-permissions, and the user's read-only access to shared cluster workflow
-templates after creating the user's K3s namespace:
+Install the Argo executor identity with namespace `admin` access and the user's
+read-only access to shared cluster workflow templates after creating the
+user's K3s namespace:
 
 ```bash
 sudo ./install-argo-workflow-runner \

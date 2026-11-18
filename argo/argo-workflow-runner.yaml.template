@@ -59,6 +59,26 @@ roleRef:
   name: argo-workflow-runner
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argo-workflow-runner-namespace-admin
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: argo-workflow-runner
+    app.kubernetes.io/instance: ${NAMESPACE}
+    app.kubernetes.io/managed-by: k3s-turing-pi
+  annotations:
+    k3s-turing-pi.io/username: ${USERNAME}
+subjects:
+  - kind: ServiceAccount
+    name: argo-workflow-runner
+    namespace: ${NAMESPACE}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: argo-workflow-template-reader

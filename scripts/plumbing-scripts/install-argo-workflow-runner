@@ -74,6 +74,7 @@ def main():
     print(f"Installed service account: {namespace}/{runner}")
     print("Granted create and patch access to WorkflowTaskResult resources.")
     print("Granted create, get, and delete access to namespaced Service resources.")
+    print("Granted the workflow runner admin access within its user namespace.")
     print(
         "Granted the user's namespace service account read access to "
         "ClusterWorkflowTemplate resources."
