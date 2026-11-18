@@ -1,0 +1,40 @@
+# Replace every occurrence of USERNAME with the Linux username to grant access.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argo-cluster-workflow-template-admin
+  labels:
+    app.kubernetes.io/name: argo-cluster-workflow-template-admin
+    app.kubernetes.io/managed-by: k3s-turing-pi
+rules:
+  - apiGroups:
+      - argoproj.io
+    resources:
+      - clusterworkflowtemplates
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: USERNAME-argo-cluster-workflow-template-admin
+  labels:
+    app.kubernetes.io/name: argo-cluster-workflow-template-admin
+    app.kubernetes.io/instance: USERNAME-namespace
+    app.kubernetes.io/managed-by: k3s-turing-pi
+  annotations:
+    k3s-turing-pi.io/username: USERNAME
+subjects:
+  - kind: ServiceAccount
+    name: USERNAME-user
+    namespace: USERNAME-namespace
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argo-cluster-workflow-template-admin
