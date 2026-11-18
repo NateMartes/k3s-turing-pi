@@ -31,16 +31,18 @@ Creates a complete managed user.
 - Uses the generated password for Harbor, Rancher, Portainer, and Linux
   accounts created by the script. Pre-existing Linux account passwords remain
   unchanged.
-- Applies the requested filesystem quota.
+- Applies the requested filesystem, K3s, and Harbor quotas unless `--no-quota`
+  is set.
 - Prompts for K3s namespace CPU, memory, storage, and NVIDIA GPU quotas
-  (defaults: 2 CPU, 6Gi memory, 10Gi storage, and 1 GPU).
+  (defaults: 2 CPU, 6Gi memory, 10Gi storage, and 1 GPU) unless `--no-quota`
+  is set.
 - Installs rootless Docker for the user.
 - Starts a Portainer Agent connected to that user's rootless Docker socket.
 - Creates `<username>-namespace` in K3s.
 - Installs `argo-workflow-runner`, its executor and temporary Service RBAC, and
   read-only shared Argo workflow template access for the user.
 - Creates the user's Harbor account and private `<username>-namespace` project
-  with a 10GiB storage quota.
+  with a 10GiB storage quota unless `--no-quota` is set.
 - Creates the user's Rancher account and project.
 - Adds the user's namespace to the Rancher project.
 - Creates the user's Portainer account.
@@ -111,6 +113,17 @@ sudo ./user-scripts/create-user -u bob -q 5GB \
 ```
 
 Quota may be specified as MB or GB:
+
+```bash
+sudo ./user-scripts/create-user -u bob -q 5GB
+```
+
+To create the user without prompting for or configuring any filesystem, K3s,
+or Harbor quota:
+
+```bash
+sudo ./user-scripts/create-user -u bob --no-quota
+```
 
 ### `remove-user`
 
@@ -309,6 +322,12 @@ sudo ./plumbing-scripts/install-k3s-namespace -u bob \
   --cpu-quota 4 --memory-quota 12Gi --storage-quota 20Gi --gpu-quota 1
 ```
 
+Use `--no-quota` to create the namespace without a `ResourceQuota`:
+
+```bash
+sudo ./plumbing-scripts/install-k3s-namespace -u bob --no-quota
+```
+
 ### `uninstall-k3s-namespace`
 
 Deletes the user's namespace and the kubeconfig created by this tool.
@@ -405,7 +424,8 @@ database-authenticated Harbor users, so it is not applicable when Harbor is
 configured to use LDAP, AD, or OIDC for user authentication.
 
 Each managed Harbor namespace project receives a 10GiB (10,737,418,240-byte)
-storage quota by default. Use `--storage-quota-bytes` to override it.
+storage quota by default. Use `--storage-quota-bytes` to override it, or use
+`--no-quota` to skip Harbor quota configuration.
 
 ### `set-harbor-quota`
 

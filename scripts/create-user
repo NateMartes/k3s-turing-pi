@@ -83,7 +83,16 @@ def main():
             "must include their dependencies."
         ),
     )
-    p.add_argument("-q", "--quota", default=None, help="Filesystem quota, e.g. 5GB or 500MB.")
+    quota_options = p.add_mutually_exclusive_group()
+    quota_options.add_argument(
+        "-q", "--quota", default=None,
+        help="Filesystem quota, e.g. 5GB or 500MB.",
+    )
+    quota_options.add_argument(
+        "--no-quota",
+        action="store_true",
+        help="Do not prompt for or configure filesystem, K3s, or Harbor quotas.",
+    )
     p.add_argument("--k3s-cpu-quota", default=None,
                    help="K3s namespace CPU quota. Default: 2.")
     p.add_argument("--k3s-memory-quota", default=None,
@@ -107,6 +116,13 @@ def main():
     args = p.parse_args()
     selected_services = args.only
     validate_services(p, selected_services)
+    if args.no_quota and any((
+        args.k3s_cpu_quota,
+        args.k3s_memory_quota,
+        args.k3s_storage_quota,
+        args.k3s_gpu_quota,
+    )):
+        p.error("--no-quota cannot be combined with K3s quota options")
 
     require_root()
     if "rancher" in selected_services:
@@ -134,8 +150,12 @@ def main():
     if state_path(username).exists():
         die(f"A state file already exists for {username}; remove/reconcile it first.")
 
-    quota = args.quota or input("Filesystem quota for user (for example 5GB): ").strip()
-    if "k3s-namespace" in selected_services:
+    quota = None
+    if not args.no_quota:
+        quota = args.quota or input(
+            "Filesystem quota for user (for example 5GB): "
+        ).strip()
+    if "k3s-namespace" in selected_services and not args.no_quota:
         k3s_cpu_quota = (
             args.k3s_cpu_quota or input("K3s CPU quota [2]: ").strip() or "2"
         )
@@ -169,6 +189,7 @@ def main():
         "username": username,
         "services": sorted(selected_services),
         "quota": quota,
+        "filesystem_quota": not args.no_quota,
         "rancher_host": args.rancher_host,
         "harbor_host": args.harbor_host,
         "portainer_host": args.portainer_host,
@@ -182,11 +203,15 @@ def main():
         "k3s_memory_quota": k3s_memory_quota,
         "k3s_storage_quota": k3s_storage_quota,
         "k3s_gpu_quota": k3s_gpu_quota,
+        "k3s_quota": not args.no_quota,
         "rancher_user": username,
         "rancher_project": f"{username}-project",
         "harbor_user": username,
         "harbor_project": f"{username}-namespace",
-        "harbor_storage_quota_bytes": 10 * 1024 * 1024 * 1024,
+        "harbor_storage_quota_bytes": (
+            None if args.no_quota else 10 * 1024 * 1024 * 1024
+        ),
+        "harbor_quota": not args.no_quota,
         "portainer_user": username,
         "portainer_environment": f"{username}-docker",
         "docker_rootless": False,
@@ -211,7 +236,10 @@ def main():
         state["home"] = u.pw_dir
         state["linux_user"] = True
 
-        state.update(set_quota(username, quota))
+        if args.no_quota:
+            print("Quota configuration disabled by --no-quota.")
+        else:
+            state.update(set_quota(username, quota))
         save_state(username, state)
 
         if "docker-rootless" in selected_services:
@@ -244,15 +272,19 @@ def main():
         k3s_token = None
         if "k3s-namespace" in selected_services:
             print("\n[3/7] Creating K3s namespace")
-            run_plumbing(
-                "install-k3s-namespace",
-                [
-                    "-u", username,
+            k3s_args = ["-u", username]
+            if args.no_quota:
+                k3s_args.append("--no-quota")
+            else:
+                k3s_args.extend([
                     "--cpu-quota", k3s_cpu_quota,
                     "--memory-quota", k3s_memory_quota,
                     "--storage-quota", k3s_storage_quota,
                     "--gpu-quota", k3s_gpu_quota,
-                ],
+                ])
+            run_plumbing(
+                "install-k3s-namespace",
+                k3s_args,
                 raw_logs=args.raw_logs,
                 label="Creating K3s namespace",
             )
@@ -277,9 +309,12 @@ def main():
 
         if "harbor" in selected_services:
             print("\n[5/7] Creating Harbor account/project")
+            harbor_args = ["-u", username, "-H", args.harbor_host]
+            if args.no_quota:
+                harbor_args.append("--no-quota")
             run_plumbing(
                 "install-harbor-account",
-                ["-u", username, "-H", args.harbor_host],
+                harbor_args,
                 extra_env={
                     "USER_PASSWORD": password,
                     **(

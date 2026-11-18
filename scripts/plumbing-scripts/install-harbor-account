@@ -30,9 +30,14 @@ def main():
         "--email", default=None,
         help="Email for a newly created Harbor user. Defaults to <user>@local.invalid.",
     )
-    parser.add_argument(
+    quota_options = parser.add_mutually_exclusive_group()
+    quota_options.add_argument(
         "--storage-quota-bytes", type=int, default=DEFAULT_STORAGE_QUOTA_BYTES,
         help="Harbor project storage quota in bytes. Default: 10737418240 (10GiB).",
+    )
+    quota_options.add_argument(
+        "--no-quota", action="store_true",
+        help="Do not configure a storage quota for the Harbor project.",
     )
     parser.add_argument(
         "--admin-username", default=os.environ.get("HARBOR_ADMIN_USERNAME", "admin"),
@@ -44,7 +49,7 @@ def main():
     )
     args = parser.parse_args()
     args.hostname = require_hostname(args.hostname, "HARBOR_HOSTNAME")
-    if args.storage_quota_bytes <= 0:
+    if not args.no_quota and args.storage_quota_bytes <= 0:
         parser.error("--storage-quota-bytes must be greater than zero")
 
     # Match K3s namespace provisioning: only provision resources for a local user.
@@ -110,40 +115,45 @@ def main():
     if not project or project.get("project_id") is None:
         raise SystemExit(f"Harbor did not return a project ID for {project_name!r}.")
 
-    quota_query = urlencode({
-        "reference": "project",
-        "reference_id": project["project_id"],
-    })
-    quota_response = request_json(
-        "GET",
-        f"{base}/api/v2.0/quotas?{quota_query}",
-        headers=headers,
-        verify=verify,
-    )
-    quotas = (
-        quota_response.get("items", [quota_response])
-        if isinstance(quota_response, dict)
-        else quota_response
-    )
-    quota = next(
-        (
-            item for item in quotas
-            if str(item.get("ref", {}).get("id")) == str(project["project_id"])
-        ),
-        None,
-    )
-    if not quota or quota.get("id") is None:
-        raise SystemExit(f"Harbor did not return a storage quota for {project_name!r}.")
-    request_json(
-        "PUT", f"{base}/api/v2.0/quotas/{quote(str(quota['id']), safe='')}",
-        headers=headers,
-        json_body={"hard": {"storage": args.storage_quota_bytes}},
-        verify=verify,
-    )
-    print(
-        f"Set Harbor storage quota for {project_name}: "
-        f"{args.storage_quota_bytes} bytes."
-    )
+    if args.no_quota:
+        print(f"Skipped Harbor storage quota configuration for {project_name}.")
+    else:
+        quota_query = urlencode({
+            "reference": "project",
+            "reference_id": project["project_id"],
+        })
+        quota_response = request_json(
+            "GET",
+            f"{base}/api/v2.0/quotas?{quota_query}",
+            headers=headers,
+            verify=verify,
+        )
+        quotas = (
+            quota_response.get("items", [quota_response])
+            if isinstance(quota_response, dict)
+            else quota_response
+        )
+        quota = next(
+            (
+                item for item in quotas
+                if str(item.get("ref", {}).get("id")) == str(project["project_id"])
+            ),
+            None,
+        )
+        if not quota or quota.get("id") is None:
+            raise SystemExit(
+                f"Harbor did not return a storage quota for {project_name!r}."
+            )
+        request_json(
+            "PUT", f"{base}/api/v2.0/quotas/{quote(str(quota['id']), safe='')}",
+            headers=headers,
+            json_body={"hard": {"storage": args.storage_quota_bytes}},
+            verify=verify,
+        )
+        print(
+            f"Set Harbor storage quota for {project_name}: "
+            f"{args.storage_quota_bytes} bytes."
+        )
 
     members = request_json(
         "GET", f"{base}/api/v2.0/projects/{quote(project_name, safe='')}/members",

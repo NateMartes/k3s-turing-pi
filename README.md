@@ -284,6 +284,9 @@ architecture.
    `portainer-agent`, `docker-rootless`, `argo-workflow-runner`, and
    `k3s-namespace`. When `--only` is omitted, the entire list is selected.
 
+   Use `--no-quota` to skip all filesystem, K3s namespace, and Harbor project
+   quota prompts and configuration.
+
 This will make accounts on the services above, automatically. On first login,
 the installed system-wide profile selects the user's namespace-scoped
 `~/.kube/config`. The command's final summary groups the URL, username,

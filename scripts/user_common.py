@@ -448,7 +448,13 @@ def print_resource_summary(
         linux_user += " (pre-existing)"
     print(f"Linux user:           {linux_user}")
     print(f"Home directory:       {state.get('home', '?')}")
-    print(f"Quota:                {state.get('quota', '?')} on {state.get('quota_filesystem', '?')}")
+    if state.get("filesystem_quota") is False:
+        print("Quota:                disabled")
+    else:
+        print(
+            f"Quota:                {state.get('quota', '?')} on "
+            f"{state.get('quota_filesystem', '?')}"
+        )
     if state.get("services"):
         print(f"Selected services:    {', '.join(state['services'])}")
     elif state.get("excluded"):
@@ -461,13 +467,16 @@ def print_resource_summary(
         print(f"Agent address:        {state.get('agent_address', '?')}")
     if state.get("k3s_namespace"):
         print(f"K3s namespace:        {state.get('namespace', '?')}")
-        print(
-            "K3s quota:            "
-            f"CPU {state.get('k3s_cpu_quota', '?')}, "
-            f"memory {state.get('k3s_memory_quota', '?')}, "
-            f"storage {state.get('k3s_storage_quota', '?')}, "
-            f"GPUs {state.get('k3s_gpu_quota', '?')}"
-        )
+        if state.get("k3s_quota") is False:
+            print("K3s quota:            disabled")
+        else:
+            print(
+                "K3s quota:            "
+                f"CPU {state.get('k3s_cpu_quota', '?')}, "
+                f"memory {state.get('k3s_memory_quota', '?')}, "
+                f"storage {state.get('k3s_storage_quota', '?')}, "
+                f"GPUs {state.get('k3s_gpu_quota', '?')}"
+            )
     else:
         print("K3s namespace:        False")
     print(f"Argo workflow runner: {state.get('argo_workflow_runner', False)}")
@@ -479,10 +488,13 @@ def print_resource_summary(
     if state.get("harbor_account"):
         print(f"Harbor account:       {state.get('harbor_user', '?')}")
         print(f"Harbor project:       {state.get('harbor_project', '?')}")
-        print(
-            f"Harbor quota:         "
-            f"{state.get('harbor_storage_quota', '10GB')}"
-        )
+        if state.get("harbor_quota") is False:
+            print("Harbor quota:         disabled")
+        else:
+            print(
+                f"Harbor quota:         "
+                f"{state.get('harbor_storage_quota', '10GB')}"
+            )
     else:
         print("Harbor account:       False")
     if state.get("portainer_account"):

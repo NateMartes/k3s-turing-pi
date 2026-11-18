@@ -19,15 +19,32 @@ def kubectl(args, *, capture=False, input_data=None):
 def main():
     p = argparse.ArgumentParser(description="Create a private K3s namespace and per-user kubeconfig.")
     p.add_argument("-u", "--username", default=current_username())
-    p.add_argument("--cpu-quota", type=resource_quantity, default="2",
+    p.add_argument("--cpu-quota", type=resource_quantity, default=None,
                    help="Namespace total CPU requests and limits. Default: 2.")
-    p.add_argument("--memory-quota", type=resource_quantity, default="6Gi",
+    p.add_argument("--memory-quota", type=resource_quantity, default=None,
                    help="Namespace total memory requests and limits. Default: 6Gi.")
-    p.add_argument("--storage-quota", type=resource_quantity, default="10Gi",
+    p.add_argument("--storage-quota", type=resource_quantity, default=None,
                    help="Namespace persistent and ephemeral storage quota. Default: 10Gi.")
-    p.add_argument("--gpu-quota", type=whole_resource_quantity, default="1",
+    p.add_argument("--gpu-quota", type=whole_resource_quantity, default=None,
                    help="Namespace NVIDIA GPU quota. Default: 1.")
+    p.add_argument(
+        "--no-quota", action="store_true",
+        help="Do not create a ResourceQuota for the namespace.",
+    )
     args = p.parse_args()
+    supplied_quotas = (
+        args.cpu_quota,
+        args.memory_quota,
+        args.storage_quota,
+        args.gpu_quota,
+    )
+    if args.no_quota and any(value is not None for value in supplied_quotas):
+        p.error("--no-quota cannot be combined with quota options")
+    if not args.no_quota:
+        args.cpu_quota = args.cpu_quota or "2"
+        args.memory_quota = args.memory_quota or "6Gi"
+        args.storage_quota = args.storage_quota or "10Gi"
+        args.gpu_quota = args.gpu_quota or "1"
 
     require_root()
     username = determine_username(args.username)
@@ -38,7 +55,8 @@ def main():
     run(["kubectl", "create", "namespace", namespace], check=False)
     run(["kubectl", "-n", namespace, "create", "serviceaccount", sa], check=False)
 
-    quota = f"""apiVersion: v1
+    if not args.no_quota:
+        quota = f"""apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: {username}-namespace-quota
@@ -54,7 +72,7 @@ spec:
     limits.ephemeral-storage: {args.storage_quota}
     requests.nvidia.com/gpu: {args.gpu_quota}
 """
-    kubectl(["apply", "-f", "-"], input_data=quota)
+        kubectl(["apply", "-f", "-"], input_data=quota)
 
     rb = f"""apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -129,11 +147,14 @@ users:
     os.chown(kube_dir / MARKER, u.pw_uid, u.pw_gid)
 
     print(f"Created namespace: {namespace}")
-    print(
-        "Applied resource quota: "
-        f"CPU {args.cpu_quota}, memory {args.memory_quota}, "
-        f"storage {args.storage_quota}, GPUs {args.gpu_quota}."
-    )
+    if args.no_quota:
+        print("No ResourceQuota was created for the namespace.")
+    else:
+        print(
+            "Applied resource quota: "
+            f"CPU {args.cpu_quota}, memory {args.memory_quota}, "
+            f"storage {args.storage_quota}, GPUs {args.gpu_quota}."
+        )
     print(f"Created kubeconfig: {config_path}")
     print("This kubeconfig authenticates as a namespace-scoped service account.")
     print("Cluster administrators still retain cluster-wide access.")
