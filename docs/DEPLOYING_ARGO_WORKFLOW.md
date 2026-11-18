@@ -62,7 +62,6 @@ its logs:
 
 ```bash
 argo submit \
-  --argo-server "${ARGO_HOSTNAME}:443" \
   --argo-http1 \
   --from clusterworkflowtemplate/flask-hello-world \
   --namespace "${WORKFLOW_NAMESPACE}" \
@@ -70,11 +69,12 @@ argo submit \
   --log
 ```
 
-`--argo-server` is required here. Without it, the CLI uses direct Kubernetes
-API mode and Argo CLI v4.1.6 cannot resolve this cluster workflow template
-during submission. The CLI reads the user's Kubernetes bearer token from the
-active kubeconfig and sends it to Argo Server, which enforces that user's
-Kubernetes RBAC permissions.
+`ARGO_SERVER` must be set for this command to use Argo Server. The system-wide
+Argo variables profile configures it and derives `ARGO_TOKEN` from the active
+user in the user's kubeconfig. Without `ARGO_SERVER`, the CLI uses direct
+Kubernetes API mode and Argo CLI v4.1.6 cannot resolve this cluster workflow
+template during submission. Argo Server enforces the Kubernetes RBAC
+permissions associated with the exported bearer token.
 
 ### 4. Use the printed URL
 

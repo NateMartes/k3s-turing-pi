@@ -55,8 +55,8 @@ sudo install -D -o root -g root -m 644 \
   ../../etc/profile.d/k3s-turing-pi-kubeconfig.sh \
   /etc/profile.d/k3s-turing-pi-kubeconfig.sh
 sudo install -D -o root -g root -m 644 \
-  ../../etc/profile.d/k3s-turing-pi-argo-server.sh \
-  /etc/profile.d/k3s-turing-pi-argo-server.sh
+  ../../etc/profile.d/k3s-turing-pi-argo-variables.sh \
+  /etc/profile.d/k3s-turing-pi-argo-variables.sh
 ```
 
 For users with a readable `~/.kube/config`, login shells then set `KUBECONFIG`
@@ -69,5 +69,6 @@ does not override an explicitly set `KUBECONFIG`. Existing sessions must log
 out and back in after the script is first installed.
 
 The Argo profile sets `ARGO_SERVER` to the cluster's Argo Workflows endpoint
-unless the user has already selected another endpoint. It also takes effect on
-the user's next login.
+and derives `ARGO_TOKEN` from the active user in the user's kubeconfig. It does
+not override either variable when it is already set. The profile takes effect
+on the user's next login.

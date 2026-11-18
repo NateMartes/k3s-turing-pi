@@ -116,8 +116,8 @@ sudo install -D -o root -g root -m 644 \
   ./etc/profile.d/k3s-turing-pi-kubeconfig.sh \
   /etc/profile.d/k3s-turing-pi-kubeconfig.sh
 sudo install -D -o root -g root -m 644 \
-  ./etc/profile.d/k3s-turing-pi-argo-server.sh \
-  /etc/profile.d/k3s-turing-pi-argo-server.sh
+  ./etc/profile.d/k3s-turing-pi-argo-variables.sh \
+  /etc/profile.d/k3s-turing-pi-argo-variables.sh
 ```
 
 ### Deploy the workflow runner

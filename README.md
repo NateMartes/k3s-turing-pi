@@ -263,12 +263,13 @@ architecture.
    ```
 
 6. Install the system-wide profile that configures the Argo CLI to use the
-   cluster's Argo Server without modifying users' shell files:
+   cluster's Argo Server and the token from each user's kubeconfig without
+   modifying users' shell files:
 
    ```bash
    sudo install -D -o root -g root -m 644 \
-     ./etc/profile.d/k3s-turing-pi-argo-server.sh \
-     /etc/profile.d/k3s-turing-pi-argo-server.sh
+     ./etc/profile.d/k3s-turing-pi-argo-variables.sh \
+     /etc/profile.d/k3s-turing-pi-argo-variables.sh
    ```
 
 7. Run the create-user script:
