@@ -268,17 +268,41 @@ architecture.
    sudo ./scripts/create-user -u <new-user>
    ```
 
+   To create resources only for selected services or features, pass a
+   comma-separated list with `--only` (or `-o`):
+
+   ```bash
+   sudo ./scripts/create-user -u sysadmin \
+     --only harbor
+   ```
+
+   Supported selections are `harbor`, `rancher`, `portainer`,
+   `portainer-agent`, `docker-rootless`, `argo-workflow-runner`, and
+   `k3s-namespace`. When `--only` is omitted, the entire list is selected.
+
 This will make accounts on the services above, automatically. On first login,
 the installed system-wide profile selects the user's namespace-scoped
-`~/.kube/config`. The command's final summary includes the generated password,
-the user's K3s token, and a copy-ready `Bearer <token>` value for logging in to
-the Argo UI. Treat this output as sensitive.
+`~/.kube/config`. The command's final summary groups the URL, username,
+password or token, and relevant project or namespace for Linux/rootless Docker,
+K3s, Argo Workflows, Harbor, Rancher, and Portainer. Treat this output as
+sensitive.
 
 In the event of failures, you can revert the changes:
 
 ```bash
 sudo ./scripts/remove-user -u <new-user>
 ```
+
+To remove resources only for selected services, use the same comma-separated
+selection list:
+
+```bash
+sudo ./scripts/remove-user -u <new-user> \
+  --only harbor,rancher,portainer
+```
+
+The state file is retained when unselected service resources remain.
+When `--only` is omitted, the entire service list is selected.
 
 ### Updating User Passwords
 

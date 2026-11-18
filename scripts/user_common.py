@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import pwd
@@ -26,9 +27,30 @@ STATE_ROOT = Path(__file__).resolve().parent / "state"
 DEFAULT_RANCHER_HOST = os.getenv("RANCHER_HOSTNAME")
 DEFAULT_PORTAINER_HOST = os.getenv("PORTAINER_HOSTNAME")
 DEFAULT_HARBOR_HOST = os.getenv("HARBOR_HOSTNAME")
+DEFAULT_ARGO_HOST = os.getenv("ARGO_HOSTNAME")
 DEFAULT_PORTAINER_API_KEY = os.getenv("PORTAINER_API_KEY")
 DEFAULT_RANCHER_API_KEY = os.getenv("RANCHER_TOKEN")
 DEFAULT_HARBOR_ADMIN_PASSWORD = os.getenv("HARBOR_ADMIN_PASSWORD")
+
+SELECTABLE_SERVICES = (
+    "harbor",
+    "rancher",
+    "portainer",
+    "portainer-agent",
+    "docker-rootless",
+    "argo-workflow-runner",
+    "k3s-namespace",
+)
+
+SELECTABLE_SERVICE_DEPENDENCIES = {
+    "harbor": (),
+    "rancher": ("k3s-namespace",),
+    "portainer": (),
+    "portainer-agent": ("docker-rootless",),
+    "docker-rootless": (),
+    "argo-workflow-runner": ("k3s-namespace",),
+    "k3s-namespace": (),
+}
 
 WORDS = (
     "Acacia Almond Alpine Anchor Autumn Bamboo Beacon Birchwood Blossom Bronze "
@@ -40,6 +62,23 @@ WORDS = (
 ).split()
 SYMBOLS = "!@#$%&*+-_=?"
 MIN_PASSWORD_LENGTH = 15
+
+
+def parse_services(value: str) -> frozenset[str]:
+    services = [service.strip() for service in value.split(",")]
+    if not all(services):
+        raise argparse.ArgumentTypeError(
+            "only must be a comma-separated list without empty entries"
+        )
+
+    unknown = sorted(set(services) - set(SELECTABLE_SERVICES))
+    if unknown:
+        raise argparse.ArgumentTypeError(
+            f"unknown service(s): {', '.join(unknown)}; choose from: "
+            f"{', '.join(SELECTABLE_SERVICES)}"
+        )
+    return frozenset(services)
+
 
 def die(message: str, code: int = 1):
     print(f"ERROR: {message}", file=sys.stderr)
@@ -388,6 +427,23 @@ def agent_address(port: int) -> str:
     return f"{socket.getfqdn()}:{port}"
 
 
+def _https_url(host: Optional[str]) -> str:
+    if not host:
+        return "(not configured)"
+    endpoint = host.rstrip("/")
+    if "://" not in endpoint:
+        endpoint = f"https://{endpoint}"
+    return endpoint
+
+
+def _print_credential_group(name: str, fields: list[tuple[str, object]]) -> None:
+    print(f"\n{name}")
+    print("-" * len(name))
+    width = max(len(label) for label, _ in fields) + 1
+    for label, value in fields:
+        print(f"{label + ':':<{width}} {value}")
+
+
 def print_resource_summary(
     state: dict,
     *,
@@ -400,35 +456,130 @@ def print_resource_summary(
     print(f"Linux user:           {username}")
     print(f"Home directory:       {state.get('home', '?')}")
     print(f"Quota:                {state.get('quota', '?')} on {state.get('quota_filesystem', '?')}")
+    if state.get("services"):
+        print(f"Selected services:    {', '.join(state['services'])}")
+    elif state.get("excluded"):
+        # Backward compatibility for state created by the earlier --exclude API.
+        selected = sorted(set(SELECTABLE_SERVICES) - set(state["excluded"]))
+        print(f"Selected services:    {', '.join(selected)}")
     print(f"Docker rootless:      {state.get('docker_rootless', False)}")
     print(f"Portainer agent:      {state.get('portainer_agent', False)}")
     if state.get("portainer_agent"):
         print(f"Agent address:        {state.get('agent_address', '?')}")
-    print(f"K3s namespace:        {state.get('namespace', '?')}")
-    print(
-        "K3s quota:            "
-        f"CPU {state.get('k3s_cpu_quota', '?')}, "
-        f"memory {state.get('k3s_memory_quota', '?')}, "
-        f"storage {state.get('k3s_storage_quota', '?')}, "
-        f"GPUs {state.get('k3s_gpu_quota', '?')}"
-    )
-    print(f"Rancher account:      {state.get('rancher_user', '?')}")
-    print(f"Rancher project:      {state.get('rancher_project', '?')}")
-    print(f"Harbor account:       {state.get('harbor_user', '?')}")
-    print(f"Harbor project:       {state.get('harbor_project', '?')}")
-    print(
-        f"Harbor quota:         "
-        f"{state.get('harbor_storage_quota', '10GB')}"
-    )
-    print(f"Portainer account:    {state.get('portainer_user', '?')}")
-    print(f"Portainer environment:{' ' if state.get('portainer_environment') else ''}{state.get('portainer_environment', '?')}")
-    if include_password is not None:
-        print(f"\nGenerated password:   {include_password}")
-        print("Store this securely; it is not saved by these scripts.")
-    if include_k3s_token is not None:
-        print(f"\nK3s token:           {include_k3s_token}")
-        print(f"Argo UI login:       Bearer {include_k3s_token}")
+    if state.get("k3s_namespace"):
+        print(f"K3s namespace:        {state.get('namespace', '?')}")
         print(
-            "Share this token securely; it grants the user's Kubernetes "
-            "service-account permissions."
+            "K3s quota:            "
+            f"CPU {state.get('k3s_cpu_quota', '?')}, "
+            f"memory {state.get('k3s_memory_quota', '?')}, "
+            f"storage {state.get('k3s_storage_quota', '?')}, "
+            f"GPUs {state.get('k3s_gpu_quota', '?')}"
+        )
+    else:
+        print("K3s namespace:        False")
+    print(f"Argo workflow runner: {state.get('argo_workflow_runner', False)}")
+    if state.get("rancher_account"):
+        print(f"Rancher account:      {state.get('rancher_user', '?')}")
+        print(f"Rancher project:      {state.get('rancher_project', '?')}")
+    else:
+        print("Rancher account:      False")
+    if state.get("harbor_account"):
+        print(f"Harbor account:       {state.get('harbor_user', '?')}")
+        print(f"Harbor project:       {state.get('harbor_project', '?')}")
+        print(
+            f"Harbor quota:         "
+            f"{state.get('harbor_storage_quota', '10GB')}"
+        )
+    else:
+        print("Harbor account:       False")
+    if state.get("portainer_account"):
+        print(f"Portainer account:    {state.get('portainer_user', '?')}")
+        print(
+            "Portainer environment: "
+            f"{state.get('portainer_environment', '?')}"
+        )
+    else:
+        print("Portainer account:    False")
+    if include_password is None and include_k3s_token is None:
+        return
+
+    print("\nLogin credentials (sensitive)")
+    print("-----------------------------")
+
+    if include_password is not None:
+        linux_group = (
+            "Linux / rootless Docker"
+            if state.get("docker_rootless")
+            else "Linux"
+        )
+        _print_credential_group(
+            linux_group,
+            [
+                ("Username", username),
+                ("Password", include_password),
+                ("Home", state.get("home", "?")),
+            ],
+        )
+
+    if include_k3s_token is not None and state.get("k3s_namespace"):
+        home = state.get("home")
+        kubeconfig = f"{home}/.kube/config" if home else "?"
+        _print_credential_group(
+            "K3s / kubectl",
+            [
+                ("Service account", state.get("k3s_service_account", f"{username}-user")),
+                ("Namespace", state.get("namespace", "?")),
+                ("Kubeconfig", kubeconfig),
+                ("Token", include_k3s_token),
+            ],
+        )
+        if state.get("argo_workflow_runner"):
+            _print_credential_group(
+                "Argo Workflows",
+                [
+                    ("URL", _https_url(state.get("argo_host"))),
+                    ("Authorization", f"Bearer {include_k3s_token}"),
+                ],
+            )
+
+    if include_password is not None and state.get("harbor_account"):
+        _print_credential_group(
+            "Harbor",
+            [
+                ("URL", _https_url(state.get("harbor_host"))),
+                ("Username", state.get("harbor_user", username)),
+                ("Password", include_password),
+                ("Project", state.get("harbor_project", "?")),
+            ],
+        )
+    if include_password is not None and state.get("rancher_account"):
+        _print_credential_group(
+            "Rancher",
+            [
+                ("URL", _https_url(state.get("rancher_host"))),
+                ("Username", state.get("rancher_user", username)),
+                ("Password", include_password),
+                ("Project", state.get("rancher_project", "?")),
+            ],
+        )
+    if include_password is not None and state.get("portainer_account"):
+        _print_credential_group(
+            "Portainer",
+            [
+                ("URL", _https_url(state.get("portainer_host"))),
+                ("Username", state.get("portainer_user", username)),
+                ("Password", include_password),
+                ("Environment", state.get("portainer_environment", "?")),
+            ],
+        )
+
+    if include_k3s_token is not None:
+        print(
+            "\nStore and share this output securely. The password is not saved by "
+            "these scripts, and the token grants the user's Kubernetes permissions."
+        )
+    else:
+        print(
+            "\nStore and share this output securely. The password is not saved by "
+            "these scripts."
         )

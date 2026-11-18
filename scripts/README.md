@@ -47,8 +47,8 @@ Creates a complete managed user.
 - Adds the user's namespace to the Rancher project.
 - Creates the user's Portainer account.
 - Registers the user's Portainer Agent environment.
-- Prints all created resources, the generated password, the user's K3s token,
-  and a copy-ready `Bearer <token>` login for the Argo UI.
+- Prints all created resources followed by grouped login details for
+  Linux/rootless Docker, K3s, Argo Workflows, Harbor, Rancher, and Portainer.
 
 Before creating the first user, install the system-wide kubeconfig profile from
 the repository root. This is a one-time host setup step:
@@ -65,10 +65,27 @@ Then create the user:
 sudo ./scripts/create-user -u bob -q 5GB
 ```
 
-The final output contains credentials. Share it securely. The K3s token is the
-same service-account token stored in the user's `~/.kube/config` and in their
-namespace's `<username>-user-token` Secret; `create-user` does not save another
-copy in its state file.
+Use `--only` (or `-o`) with a comma-separated list to create resources only
+for selected services or features:
+
+```bash
+sudo ./scripts/create-user -u sysadmin -q 5GB \
+  --only harbor
+```
+
+The supported selections are `harbor`, `rancher`, `portainer`,
+`portainer-agent`, `docker-rootless`, `argo-workflow-runner`, and
+`k3s-namespace`. Selected services must include their dependencies: the
+Portainer Agent requires rootless Docker, while the Argo runner and Rancher
+namespace attachment require the K3s namespace.
+When `--only` is omitted, the entire service list is selected.
+Run `./scripts/create-user --help` for the full option description.
+
+The final output contains each service's URL (where applicable), username,
+password or token, and relevant project or namespace. Share it securely. The
+K3s token is the same service-account token stored in the user's
+`~/.kube/config` and in their namespace's `<username>-user-token` Secret;
+`create-user` does not save another copy in its state file.
 
 By default, each stage shows a rolling window containing the latest four raw
 log lines. If a stage fails, its complete output is printed as a labeled log
@@ -113,6 +130,19 @@ By default, the user's home directory is preserved.
 ```bash
 sudo ./user-scripts/remove-user -u bob
 ```
+
+Use `--only` (or `-o`) to remove resources only for selected services. Linux
+account removal is unchanged:
+
+```bash
+sudo ./user-scripts/remove-user -u bob \
+  --only harbor,rancher,portainer
+```
+
+The removal command accepts the same service list as `create-user`. When
+`--only` is omitted, the entire service list is selected.
+When unselected services remain, their state file is retained so they can be
+removed by a later command.
 
 To also delete the home directory and Docker data:
 
