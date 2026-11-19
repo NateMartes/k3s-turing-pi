@@ -90,6 +90,20 @@ spec:
       servicePortName: http
       nodeSelector:
         sysadmin-services: "true"
+      # trust-k3s-crets keeps this Secret synchronized with the complete local
+      # CA chain. Mount the Secret as a certificate directory so Argo's Go TLS
+      # clients discover every certificate without a per-certificate path.
+      volumeMounts:
+        - name: intermediate-ca
+          mountPath: /etc/ssl/certs/
+          readOnly: true
+      volumes:
+        - name: intermediate-ca
+          secret:
+            secretName: intermediate-ca
+            # Allow the first deployment to start before the trust discovery
+            # command has created the Secret.
+            optional: true
       clusterWorkflowTemplates:
         enabled: true
         enableEditing: false

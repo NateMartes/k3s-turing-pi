@@ -200,10 +200,13 @@ names that host as its registry.
 The Argo Helm release defines workflow defaults that mount the merged node
 system CA bundle into new workflow `main` containers. When Argo is reachable at
 `ARGO_HOSTNAME` and its workflow controller is Ready, the script verifies and
-refreshes those defaults. The containers receive common CA environment
-variables, so PEM-based clients can trust every sysadmin service without
-per-workflow certificate configuration. Existing workflow Pods are not
-modified; re-submit them after running the trust command.
+refreshes those defaults. It also writes the complete discovered root and
+intermediate chain to the `sysadmin-system/intermediate-ca` Secret. The Argo
+server mounts that Secret as the `/etc/ssl/certs/` directory rather than
+mounting one named certificate. Workflow containers receive common CA
+environment variables, so PEM-based clients can trust every sysadmin service
+without per-workflow certificate configuration. Existing workflow Pods are
+not modified; re-submit them after running the trust command.
 
 The SSH user defaults to the account that invoked `sudo`. It must have
 key-based access and passwordless `sudo` on every K3s node. Specify a different

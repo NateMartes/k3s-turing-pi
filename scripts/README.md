@@ -25,9 +25,12 @@ nodes so containerd can pull images from any sysadmin service that acts as a
 registry. The Argo Helm release defines workflow defaults that mount the merged
 node system CA bundle into new workflow `main` containers. When `ARGO_HOSTNAME`
 resolves to a reachable Argo Workflows Ingress and its workflow controller is
-Ready, this command verifies and refreshes those defaults. Common TLS
-environment variables point to the read-only bundle, so existing public roots
-remain available alongside every discovered sysadmin-service CA.
+Ready, this command verifies and refreshes those defaults and synchronizes the
+complete root and intermediate chain to the Argo server's `intermediate-ca`
+Secret. The server mounts that Secret at `/etc/ssl/certs/`, while workflow
+containers use the node bundle. Common TLS environment variables point to the
+read-only workflow bundle, so existing public roots remain available alongside
+every discovered sysadmin-service CA.
 
 ```bash
 sudo ./trust-k3s-crets

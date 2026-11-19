@@ -8,7 +8,7 @@ self-signed/private CA certificates into:
   1. The Ubuntu system CA trust store
   2. Chromium's machine-wide CACertificates enterprise policy
   3. K3s containerd registry trust for every sysadmin-service Ingress
-  4. Argo Workflow Pods when Argo is running at ARGO_HOSTNAME
+  4. The Argo server and Workflow Pods when Argo runs at ARGO_HOSTNAME
 
 The script then copies the certificates and merged K3s registry configuration
 to every Ready K3s node over SSH/SCP and restarts K3s on those nodes.
@@ -59,6 +59,7 @@ K3S_CA_BUNDLE_PATH = K3S_CONFIG_DIR / "sysadmin-services-ca-bundle.pem"
 SYSTEM_CA_BUNDLE_PATH = Path("/etc/ssl/certs/ca-certificates.crt")
 ARGO_CA_VOLUME_NAME = "k3s-sysadmin-ca-trust"
 ARGO_CA_MOUNT_PATH = "/etc/ssl/certs/k3s-sysadmin-ca-bundle.pem"
+ARGO_SERVER_CA_SECRET_NAME = "intermediate-ca"
 ARGO_CA_ENVIRONMENT = (
     "SSL_CERT_FILE",
     "REQUESTS_CA_BUNDLE",
@@ -242,44 +243,58 @@ def fetch_endpoint_chain(host: str, port: int = 443) -> list[bytes]:
     return split_pem_certificates(proc.stdout)
 
 
-def choose_trust_anchors(certs: list[bytes]) -> list[bytes]:
+def choose_trust_chain(certs: list[bytes]) -> list[bytes]:
     """
-    Prefer actual self-signed roots.
+    Return every CA certificate required to build the local chain.
 
-    If an endpoint serves one self-signed certificate (common for internal
-    Portainer/Traefik certificates), that certificate becomes the trust anchor.
+    Keep intermediates as well as self-signed roots. Some clients can retrieve
+    missing intermediates, but Argo must not depend on that behavior for local
+    services. A self-signed leaf (common for internal services) is also a valid
+    local trust anchor even when it does not advertise CA:TRUE.
     """
-    roots = [cert for cert in certs if is_self_signed(cert)]
-    if roots:
-        return roots
-
-    # If the chain has a CA cert but not the self-signed root, trusting that
-    # private intermediate can still make the local chain usable.
-    cas = [cert for cert in certs if is_ca(cert)]
-    if cas:
-        return [cas[-1]]
-
-    return []
+    chain = [cert for cert in certs if is_ca(cert)]
+    seen = {fingerprint(cert) for cert in chain}
+    chain.extend(
+        cert
+        for cert in certs
+        if is_self_signed(cert) and fingerprint(cert) not in seen
+    )
+    return chain
 
 
 def candidate_from_secret(secret: dict) -> tuple[list[bytes], str]:
     data = secret.get("data") or {}
+    chain: list[bytes] = []
+    sources = []
 
     ca_b64 = data.get("ca.crt")
     if ca_b64:
         decoded = base64.b64decode(ca_b64)
         certs = split_pem_certificates(decoded)
         if certs:
-            anchors = choose_trust_anchors(certs)
-            return (anchors or certs), "secret ca.crt"
+            # ca.crt is explicitly a CA chain. Preserve every certificate so
+            # an intermediate is not discarded when the root is also present.
+            chain.extend(certs)
+            sources.append("ca.crt")
 
     tls_b64 = data.get("tls.crt")
     if tls_b64:
         decoded = base64.b64decode(tls_b64)
         certs = split_pem_certificates(decoded)
-        anchors = choose_trust_anchors(certs)
-        if anchors:
-            return anchors, "self-signed/CA certificate from secret tls.crt"
+        tls_chain = choose_trust_chain(certs)
+        if tls_chain:
+            chain.extend(tls_chain)
+            sources.append("tls.crt")
+
+    if chain:
+        unique_chain = []
+        seen = set()
+        for cert in chain:
+            fp = fingerprint(cert)
+            if fp not in seen:
+                seen.add(fp)
+                unique_chain.append(cert)
+        return unique_chain, f"complete CA chain from secret {' + '.join(sources)}"
 
     return [], "no usable trust anchor in Secret"
 
@@ -399,6 +414,163 @@ def argo_ingress_namespaces(ingresses: list[dict], hostname: str) -> set[str]:
         for ingress in ingresses
         if hostname in ingress["hosts"]
     }
+
+
+def argo_ca_secret_data(certs: list[bytes]) -> dict[str, str]:
+    """Build root and intermediate Secret files from the complete CA chain."""
+    roots = []
+    intermediates = []
+    for cert in certs:
+        if is_self_signed(cert):
+            roots.append(cert)
+        else:
+            intermediates.append(cert)
+
+    data = {}
+    if roots:
+        root_chain = b"".join(cert.rstrip() + b"\n" for cert in roots)
+        data["root-ca.crt"] = base64.b64encode(root_chain).decode("ascii")
+    if intermediates:
+        intermediate_chain = b"".join(
+            cert.rstrip() + b"\n" for cert in intermediates
+        )
+        data["intermediate-ca.crt"] = base64.b64encode(
+            intermediate_chain
+        ).decode("ascii")
+    return data
+
+
+def sync_argo_ca_secret(
+    kubectl: list[str],
+    namespace: str,
+    certs: list[bytes],
+) -> bool:
+    """Create or replace Argo's mounted CA Secret with the complete chain."""
+    desired_data = argo_ca_secret_data(certs)
+    if not desired_data:
+        raise CommandError("No certificates are available for the Argo CA Secret.")
+
+    result = run(
+        kubectl
+        + [
+            "get",
+            "secret",
+            ARGO_SERVER_CA_SECRET_NAME,
+            "-n",
+            namespace,
+            "--ignore-not-found",
+            "-o",
+            "json",
+        ]
+    )
+    if result.stdout.strip():
+        try:
+            existing = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise CommandError(
+                f"Could not parse Argo CA Secret {namespace}/"
+                f"{ARGO_SERVER_CA_SECRET_NAME}: {exc}"
+            ) from exc
+        if (existing.get("data") or {}) == desired_data:
+            print(
+                f"Argo trust: Secret {namespace}/"
+                f"{ARGO_SERVER_CA_SECRET_NAME} already contains the full chain."
+            )
+            return False
+
+        # JSON Patch 'add' replaces an existing object member and also works
+        # when data is absent. Replacing the whole map removes stale certs.
+        patch = json.dumps(
+            [{"op": "add", "path": "/data", "value": desired_data}]
+        )
+        run(
+            kubectl
+            + [
+                "patch",
+                "secret",
+                ARGO_SERVER_CA_SECRET_NAME,
+                "-n",
+                namespace,
+                "--type=json",
+                "-p",
+                patch,
+            ]
+        )
+        print(
+            f"Argo trust: updated Secret {namespace}/"
+            f"{ARGO_SERVER_CA_SECRET_NAME} with the full chain."
+        )
+        return True
+
+    secret = {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {
+            "name": ARGO_SERVER_CA_SECRET_NAME,
+            "namespace": namespace,
+            "labels": {"app.kubernetes.io/part-of": "sysadmin-system"},
+        },
+        "data": desired_data,
+        "type": "Opaque",
+    }
+    run(
+        kubectl + ["create", "-f", "-"],
+        input_bytes=json.dumps(secret).encode("utf-8"),
+    )
+    print(
+        f"Argo trust: created Secret {namespace}/"
+        f"{ARGO_SERVER_CA_SECRET_NAME} with the full chain."
+    )
+    return True
+
+
+def restart_argo_servers(kubectl: list[str], namespaces: set[str]) -> None:
+    """Restart Argo servers so their Go TLS trust pools load the new Secret."""
+    deployments = kubectl_json(
+        kubectl,
+        ["get", "deployment", "--all-namespaces", "-o", "json"],
+    )
+    restarted = 0
+    for deployment in deployments.get("items", []):
+        metadata = deployment.get("metadata") or {}
+        namespace = metadata.get("namespace")
+        name = metadata.get("name")
+        if namespace not in namespaces or not name:
+            continue
+
+        containers = (
+            (((deployment.get("spec") or {}).get("template") or {}).get("spec") or {})
+            .get("containers", [])
+        )
+        is_server = any(
+            container.get("name") == "argo-server"
+            or (
+                "/argocli:" in container.get("image", "")
+                and "server" in (container.get("args") or [])
+            )
+            for container in containers
+        )
+        if not is_server:
+            continue
+
+        run(
+            kubectl
+            + [
+                "rollout",
+                "restart",
+                f"deployment/{name}",
+                "-n",
+                namespace,
+            ]
+        )
+        print(f"Argo trust: restarted Deployment {namespace}/{name}.")
+        restarted += 1
+
+    if restarted == 0:
+        print(
+            "Argo trust: the CA Secret changed, but no Argo server Deployment "
+            "was found to restart."
+        )
 
 
 def argo_endpoint_status(hostname: str) -> int:
@@ -683,6 +855,7 @@ def inject_argo_workflow_trust(
     kubectl: list[str],
     ingresses: list[dict],
     hostname: str,
+    certs: list[bytes],
 ) -> tuple[str, str] | None:
     namespaces = argo_ingress_namespaces(ingresses, hostname)
     if not namespaces:
@@ -690,6 +863,14 @@ def inject_argo_workflow_trust(
             f"Argo trust: no Ingress serves ARGO_HOSTNAME ({hostname}); skipping."
         )
         return None
+
+    changed_namespaces = {
+        namespace
+        for namespace in sorted(namespaces)
+        if sync_argo_ca_secret(kubectl, namespace, certs)
+    }
+    if changed_namespaces:
+        restart_argo_servers(kubectl, changed_namespaces)
 
     try:
         status = argo_endpoint_status(hostname)
@@ -1117,7 +1298,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Trust private/self-signed certificates used by K3s Ingress "
-            "endpoints system-wide and inject them into Argo Workflow Pods."
+            "endpoints system-wide and inject them into Argo Workflows."
         )
     )
     parser.add_argument(
@@ -1153,7 +1334,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "Configure only this machine; do not copy trust to Ready K3s nodes "
-            "or configure Argo Workflow Pods."
+            "or configure Argo Workflows."
         ),
     )
     return parser.parse_args()
@@ -1273,22 +1454,22 @@ def main() -> int:
             if dates:
                 print(f"    {dates}")
 
-            anchors = choose_trust_anchors(chain)
-            if not anchors:
+            trust_chain = choose_trust_chain(chain)
+            if not trust_chain:
                 print(
                     "    WARNING: endpoint chain contains no self-signed/private "
                     "CA certificate that can safely be installed as a trust anchor"
                 )
                 continue
 
-            for index, cert in enumerate(anchors):
+            for index, cert in enumerate(trust_chain):
                 fp = fingerprint(cert)
                 discovered_fps.add(fp)
                 path = write_cert(
                     f"{namespace}-{ingress_name}-endpoint-{host}-{index}",
                     cert,
                 )
-                print(f"    trusted anchor: {cert_subject(cert)}")
+                print(f"    trusted chain certificate: {cert_subject(cert)}")
                 print(f"      -> {path}")
 
     managed = all_managed_certs()
@@ -1358,7 +1539,12 @@ def main() -> int:
     elif argo_hostname:
         print("\nChecking Argo Workflows trust integration...")
         try:
-            inject_argo_workflow_trust(kubectl, ingresses, argo_hostname)
+            inject_argo_workflow_trust(
+                kubectl,
+                ingresses,
+                argo_hostname,
+                managed,
+            )
         except (CommandError, json.JSONDecodeError, OSError) as exc:
             print(
                 f"ERROR: could not configure Argo workflow trust: {exc}",
