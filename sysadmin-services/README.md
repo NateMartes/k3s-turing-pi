@@ -175,33 +175,51 @@ toleration. To allow ordinary workloads on those nodes again:
 sudo ./scripts/k3s-untaint-gpu-nodes
 ```
 
-### 6. Trust the private ingress certificates locally
+### 6. Trust and distribute the private ingress certificates
 
 After all four ingresses are available, discover their private certificate
-authorities and install them on the Ansible control machine:
+authorities, configure containerd trust for every sysadmin-service hostname,
+and distribute the resulting files to every Ready K3s node:
 
 ```bash
 sudo ./scripts/trust-k3s-crets
 ```
 
 Harbor's official chart generates its ingress certificate automatically. The
-trust script discovers that certificate through the Ingress and its TLS Secret.
+trust script discovers that certificate and every hostname exposed by an
+Ingress in `sysadmin-system`; no duplicate hostname configuration is required.
+It builds a bundle containing all discovered sysadmin-service CAs, merges a
+`tls.ca_file` entry for every discovered sysadmin-service hostname into
+`/etc/rancher/k3s/registries.yaml`, then uses SSH/SCP to install the
+certificates and registry configuration on every node whose Kubernetes `Ready`
+condition is `True`. Finally, it restarts K3s on each updated node so
+containerd reloads the configuration. Entries for services that are not image
+registries are harmless; containerd only uses an entry when an image reference
+names that host as its registry.
 
-### 7. Trust the private CAs on every K3s node
-
-Distribute the discovered CAs to every K3s server and agent, then restart their
-K3s services so containerd reloads the system trust store:
-
-```bash
-cd ansible
-ansible-playbook -i inventory.yml trust-k3s-certs.yml
-cd ..
-```
+The SSH user defaults to the account that invoked `sudo`. It must have
+key-based access and passwordless `sudo` on every K3s node. Specify a different
+remote account with `--ssh-user USER` when necessary.
 
 Every node must be able to resolve `HARBOR_HOSTNAME` to the cluster's Traefik
 ingress before it can pull images from the registry.
 
-### 8. Open the services
+Kubernetes ConfigMaps, including the automatically mounted `kube-root-ca.crt`,
+do not configure image-pull trust. The node's containerd process pulls images
+before a Pod or Argo workflow container starts. If Harbor's private CA is only
+installed in browsers, the control machine, or a Pod ConfigMap, workflows can
+fail with `ErrImagePull` or `ImagePullBackOff` and an `x509: certificate signed
+by unknown authority` event. The registry configuration and CA bundle must be
+present on every schedulable K3s server and agent, followed by a K3s restart.
+
+The script recursively merges the managed sysadmin-service TLS entries with
+the local `registries.yaml`, preserving other registry mirrors, authentication,
+and TLS settings, and creates a timestamped backup before changing it. That
+merged file becomes the cluster source of truth and replaces each Ready node's
+registry configuration; GNU `install` creates a numbered backup of an existing
+remote file.
+
+### 7. Open the services
 
 - Harbor: `https://<HARBOR_HOSTNAME>`
 - Portainer: `https://<PORTAINER_HOSTNAME>`
@@ -216,7 +234,7 @@ For Harbor's initial setup, log in as `admin` with
 `RANCHER_BOOTSTRAP_PASSWORD`. Portainer guides you through creation of its
 initial administrator account.
 
-### 9. Log a container client into Harbor
+### 8. Log a container client into Harbor
 
 After installing the private CA, authenticate a Docker-compatible client with:
 

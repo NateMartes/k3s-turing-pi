@@ -33,9 +33,6 @@ ansible-playbook <playbook> -i inventory.yml
 - `remove-k3s.yml`: Removes K3s from all nodes.
 - `setup-common-packages.yml`: Sets up all nodes to have common packages throughout.
 - `setup-desktop-packages.yml`: Installs specific packages for nodes with GUIs.
-- `trust-k3s-certs.yml`: Copies ingress CAs discovered by
-  `scripts/trust-k3s-crets` to every node and restarts K3s/containerd so private
-  HTTPS registries such as Harbor are trusted.
 
 ## Inventory variables
 

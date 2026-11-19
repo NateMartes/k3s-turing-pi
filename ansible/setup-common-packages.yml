@@ -16,6 +16,8 @@
           - quota
           - vim
           - isc-dhcp-client
+          - python3-yaml
+          - openssh-client
         state: present
         lock_timeout: 60
       environment:

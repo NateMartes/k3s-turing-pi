@@ -16,13 +16,22 @@ user-scripts/state/<username>.json
 
 ### `trust-k3s-certs`
 
-When run, adds the current K3s services' certificates to the Linux trust
-store and the Chromium trust store as well. This is nice for removing warnings for local
-clusters when proper DNS is not set up yet.
+Discovers the current K3s services' certificates and every sysadmin-service
+hostname from the deployed Ingress resources. It updates the local Linux and
+Chromium trust stores, configures every sysadmin-service hostname with the
+shared CA bundle in K3s's `registries.yaml`, and uses SSH/SCP to install the
+same trust configuration on every Ready K3s node. K3s is restarted on updated
+nodes so containerd can pull images from any sysadmin service that acts as a
+registry.
 
 ```bash
 sudo ./trust-k3s-crets
 ```
+
+The remote SSH user defaults to the account that invoked `sudo`. Use
+`--ssh-user` when the K3s nodes use a different account. That account must have
+key-based SSH access and passwordless `sudo` on the nodes. Use
+`--skip-node-distribution` to update only the current machine.
 
 ### `create-user`
 
@@ -530,6 +539,8 @@ sudo apt update
 sudo apt install -y \
   python3 \
   python3-requests \
+  python3-yaml \
+  openssh-client \
   sudo \
   curl \
   uidmap \

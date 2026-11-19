@@ -197,13 +197,19 @@ Currently this setup supports:
    `admin` password comes from `HARBOR_ADMIN_PASSWORD`; Rancher's initial
    administrator password comes from `RANCHER_BOOTSTRAP_PASSWORD`.
 
-11. Trust the certificates from the sysadmin K3s services, including Harbor's
-   private CA, and distribute them to every K3s node:
+11. Trust the certificates from the sysadmin K3s services
+   and distribute them to every Ready K3s node. The script discovers
+   every sysadmin-service hostname from the deployed Ingresses, configures K3s
+   containerd registry trust for all of them, and uses SSH/SCP to install the
+   configuration cluster-wide:
 
    ```bash
    sudo ./scripts/trust-k3s-crets
-   cd ansible && ansible-playbook -i inventory.yml trust-k3s-certs.yml
    ```
+
+   The account invoking `sudo` must have key-based SSH access and passwordless
+   `sudo` on every K3s node. Pass `--ssh-user USER` when the remote account has
+   a different name.
 
 12. Log into Harbor at the configured `HARBOR_HOSTNAME` as `admin`, using
     `HARBOR_ADMIN_PASSWORD`. Change the password after the initial login.
