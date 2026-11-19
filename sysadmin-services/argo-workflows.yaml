@@ -51,6 +51,36 @@ spec:
         sysadmin-services: "true"
       clusterWorkflowTemplates:
         enabled: true
+      # trust-k3s-crets installs this merged system bundle on every Ready node.
+      # Apply it to every generated workflow main container so the setting is
+      # part of the Helm release and survives controller ConfigMap recreation.
+      workflowDefaults:
+        spec:
+          podSpecPatch: |
+            volumes:
+            - name: k3s-sysadmin-ca-trust
+              hostPath:
+                path: /etc/ssl/certs/ca-certificates.crt
+                type: File
+            containers:
+            - name: main
+              volumeMounts:
+              - name: k3s-sysadmin-ca-trust
+                mountPath: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
+                readOnly: true
+              env:
+              - name: SSL_CERT_FILE
+                value: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
+              - name: REQUESTS_CA_BUNDLE
+                value: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
+              - name: CURL_CA_BUNDLE
+                value: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
+              - name: GIT_SSL_CAINFO
+                value: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
+              - name: NODE_EXTRA_CA_CERTS
+                value: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
+              - name: AWS_CA_BUNDLE
+                value: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
 
     server:
       authModes:

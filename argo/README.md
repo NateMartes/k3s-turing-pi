@@ -64,9 +64,10 @@ Install the generated private certificate in the hosts' shared trust store:
 sudo ./scripts/trust-k3s-crets
 ```
 
-If Argo is Ready at the configured `ARGO_HOSTNAME`, this command also updates
-the workflow controller's `workflowDefaults`. Each newly created workflow
-`main` container mounts the node's merged system CA bundle at
+The Helm release defines the workflow controller's `workflowDefaults`, and the
+trust command verifies and refreshes that configuration when Argo is Ready at
+the configured `ARGO_HOSTNAME`. Each newly created workflow `main` container
+mounts the node's merged system CA bundle at
 `/etc/ssl/certs/k3s-sysadmin-ca-bundle.pem`; common OpenSSL, curl, Git, Python,
 Node.js, and AWS SDK CA environment variables use that file. Re-run the command
 after changing a sysadmin-service certificate. Already-running workflow Pods

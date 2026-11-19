@@ -22,12 +22,12 @@ Chromium trust stores, configures every sysadmin-service hostname with the
 shared CA bundle in K3s's `registries.yaml`, and uses SSH/SCP to install the
 same trust configuration on every Ready K3s node. K3s is restarted on updated
 nodes so containerd can pull images from any sysadmin service that acts as a
-registry. When `ARGO_HOSTNAME` resolves to a reachable Argo Workflows Ingress
-and its workflow controller is Ready, the command also updates Argo's workflow
-defaults. New workflow `main` containers receive the node's merged system CA
-bundle as a read-only file and the common TLS environment variables point to
-that bundle. Existing public roots remain available alongside every discovered
-sysadmin-service CA.
+registry. The Argo Helm release defines workflow defaults that mount the merged
+node system CA bundle into new workflow `main` containers. When `ARGO_HOSTNAME`
+resolves to a reachable Argo Workflows Ingress and its workflow controller is
+Ready, this command verifies and refreshes those defaults. Common TLS
+environment variables point to the read-only bundle, so existing public roots
+remain available alongside every discovered sysadmin-service CA.
 
 ```bash
 sudo ./trust-k3s-crets
