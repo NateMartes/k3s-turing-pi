@@ -49,38 +49,13 @@ spec:
       workflowNamespaces: []
       nodeSelector:
         sysadmin-services: "true"
+      # The controller uses the Kubernetes client's TLS flag, which is distinct
+      # from the Argo CLI flag used for connections to Argo Server.
+      extraEnv:
+        - name: ARGO_INSECURE_SKIP_TLS_VERIFY
+          value: "true"
       clusterWorkflowTemplates:
         enabled: true
-      # trust-k3s-crets installs this merged system bundle on every Ready node.
-      # Apply it to every generated workflow main container so the setting is
-      # part of the Helm release and survives controller ConfigMap recreation.
-      workflowDefaults:
-        spec:
-          podSpecPatch: |
-            volumes:
-            - name: k3s-sysadmin-ca-trust
-              hostPath:
-                path: /etc/ssl/certs/ca-certificates.crt
-                type: File
-            containers:
-            - name: main
-              volumeMounts:
-              - name: k3s-sysadmin-ca-trust
-                mountPath: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
-                readOnly: true
-              env:
-              - name: SSL_CERT_FILE
-                value: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
-              - name: REQUESTS_CA_BUNDLE
-                value: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
-              - name: CURL_CA_BUNDLE
-                value: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
-              - name: GIT_SSL_CAINFO
-                value: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
-              - name: NODE_EXTRA_CA_CERTS
-                value: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
-              - name: AWS_CA_BUNDLE
-                value: /etc/ssl/certs/k3s-sysadmin-ca-bundle.pem
 
     server:
       authModes:
@@ -90,20 +65,10 @@ spec:
       servicePortName: http
       nodeSelector:
         sysadmin-services: "true"
-      # trust-k3s-crets keeps this Secret synchronized with the complete local
-      # CA chain. Mount the Secret as a certificate directory so Argo's Go TLS
-      # clients discover every certificate without a per-certificate path.
-      volumeMounts:
-        - name: intermediate-ca
-          mountPath: /etc/ssl/certs/
-          readOnly: true
-      volumes:
-        - name: intermediate-ca
-          secret:
-            secretName: intermediate-ca
-            # Allow the first deployment to start before the trust discovery
-            # command has created the Secret.
-            optional: true
+      # Do not verify the Kubernetes API certificate from Argo Server either.
+      extraEnv:
+        - name: ARGO_INSECURE_SKIP_TLS_VERIFY
+          value: "true"
       clusterWorkflowTemplates:
         enabled: true
         enableEditing: false

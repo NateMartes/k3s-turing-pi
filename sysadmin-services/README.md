@@ -49,6 +49,10 @@ Afterward, create a Portainer API key and store it as `PORTAINER_API_KEY` in
 CLI uses this endpoint to submit workflows while Argo Server enforces the
 caller's Kubernetes RBAC permissions.
 
+The managed Argo CLI profile sets `ARGO_INSECURE_SKIP_VERIFY=true` for this
+HTTPS endpoint. The Helm release sets `ARGO_INSECURE_SKIP_TLS_VERIFY=true` on
+the workflow controller and Argo Server for their Kubernetes API connections.
+
 ### 3. Remove a previous standalone Argo installation
 
 If Argo was previously installed into an `argo` namespace with the upstream
@@ -196,17 +200,6 @@ condition is `True`. Finally, it restarts K3s on each updated node so
 containerd reloads the configuration. Entries for services that are not image
 registries are harmless; containerd only uses an entry when an image reference
 names that host as its registry.
-
-The Argo Helm release defines workflow defaults that mount the merged node
-system CA bundle into new workflow `main` containers. When Argo is reachable at
-`ARGO_HOSTNAME` and its workflow controller is Ready, the script verifies and
-refreshes those defaults. It also writes the complete discovered root and
-intermediate chain to the `sysadmin-system/intermediate-ca` Secret. The Argo
-server mounts that Secret as the `/etc/ssl/certs/` directory rather than
-mounting one named certificate. Workflow containers receive common CA
-environment variables, so PEM-based clients can trust every sysadmin service
-without per-workflow certificate configuration. Existing workflow Pods are
-not modified; re-submit them after running the trust command.
 
 The SSH user defaults to the account that invoked `sudo`. It must have
 key-based access and passwordless `sudo` on every K3s node. Specify a different

@@ -58,25 +58,11 @@ sudo k3s kubectl logs deployment/argo-workflows-server \
 sudo k3s kubectl get ingress,certificate --namespace sysadmin-system
 ```
 
-Install the generated private certificate in the hosts' shared trust store:
-
-```bash
-sudo ./scripts/trust-k3s-crets
-```
-
-The Helm release defines the workflow controller's `workflowDefaults`, and the
-trust command verifies and refreshes that configuration when Argo is Ready at
-the configured `ARGO_HOSTNAME`. Each newly created workflow `main` container
-mounts the node's merged system CA bundle at
-`/etc/ssl/certs/k3s-sysadmin-ca-bundle.pem`; common OpenSSL, curl, Git, Python,
-Node.js, and AWS SDK CA environment variables use that file. The command also
-stores the complete discovered root and intermediate chain in the
-`sysadmin-system/intermediate-ca` Secret. The Helm release mounts that Secret
-as `/etc/ssl/certs/` in the Argo server; it does not mount an individual
-certificate path. Re-run the command after changing a sysadmin-service
-certificate. Already-running workflow Pods are unchanged. Runtimes with a
-separate non-PEM trust store, such as a JVM application using its default JKS
-store, still need runtime-specific setup.
+The managed CLI profile sets `ARGO_INSECURE_SKIP_VERIFY=true`, so Argo CLI
+connections through the HTTPS Ingress remain encrypted but do not verify the
+Ingress certificate. The Helm release sets
+`ARGO_INSECURE_SKIP_TLS_VERIFY=true` on both the workflow controller and Argo
+Server, disabling certificate verification for their Kubernetes API clients.
 
 Use the Argo CLI's `--argo-http1` option with this standard HTTP Ingress. This
 avoids requiring the Ingress route to support end-to-end gRPC over h2c.

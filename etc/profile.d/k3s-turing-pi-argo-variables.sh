@@ -26,3 +26,9 @@ fi
 if [ -z "${ARGO_HTTP1:-}" ]; then
     export ARGO_HTTP1=true
 fi
+
+# The Argo endpoint uses a private certificate at the external TLS proxy.
+# Keep HTTPS encryption, but do not require the CLI to verify that certificate.
+if [ -z "${ARGO_INSECURE_SKIP_VERIFY:-}" ]; then
+    export ARGO_INSECURE_SKIP_VERIFY=true
+fi
