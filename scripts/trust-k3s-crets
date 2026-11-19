@@ -8,6 +8,7 @@ self-signed/private CA certificates into:
   1. The Ubuntu system CA trust store
   2. Chromium's machine-wide CACertificates enterprise policy
   3. K3s containerd registry trust for every sysadmin-service Ingress
+  4. Argo Workflow Pods when Argo is running at ARGO_HOSTNAME
 
 The script then copies the certificates and merged K3s registry configuration
 to every Ready K3s node over SSH/SCP and restarts K3s on those nodes.
@@ -31,6 +32,7 @@ import argparse
 import base64
 import copy
 import hashlib
+import http.client
 import json
 import os
 import pwd
@@ -44,6 +46,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from config_env import ConfigError, load_sysadmin_env
+
 TRUST_DIR = Path("/usr/local/share/ca-certificates/k3s")
 CHROMIUM_POLICY_DIR = Path("/etc/chromium/policies/managed")
 CHROMIUM_BROWSER_POLICY_DIR = Path("/etc/chromium-browser/policies/managed")
@@ -52,6 +56,17 @@ POLICY_FILENAME = "k3s-trusted-cas.json"
 K3S_CONFIG_DIR = Path("/etc/rancher/k3s")
 K3S_REGISTRIES_PATH = K3S_CONFIG_DIR / "registries.yaml"
 K3S_CA_BUNDLE_PATH = K3S_CONFIG_DIR / "sysadmin-services-ca-bundle.pem"
+SYSTEM_CA_BUNDLE_PATH = Path("/etc/ssl/certs/ca-certificates.crt")
+ARGO_CA_VOLUME_NAME = "k3s-sysadmin-ca-trust"
+ARGO_CA_MOUNT_PATH = "/etc/ssl/certs/k3s-sysadmin-ca-bundle.pem"
+ARGO_CA_ENVIRONMENT = (
+    "SSL_CERT_FILE",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "GIT_SSL_CAINFO",
+    "NODE_EXTRA_CA_CERTS",
+    "AWS_CA_BUNDLE",
+)
 
 PEM_CERT_RE = re.compile(
     rb"-----BEGIN CERTIFICATE-----\s+.*?-----END CERTIFICATE-----",
@@ -347,6 +362,397 @@ def discover_sysadmin_registry_hosts(
             "deployed, or pass --registry-host for an additional hostname."
         )
     return sorted(hosts)
+
+
+def configured_argo_hostname() -> str | None:
+    """Load the optional Argo hostname from the administrator configuration."""
+    try:
+        load_sysadmin_env()
+    except ConfigError as exc:
+        print(f"WARNING: cannot read ARGO_HOSTNAME: {exc}")
+        return None
+
+    hostname = os.environ.get("ARGO_HOSTNAME", "").strip()
+    if not hostname:
+        return None
+    valid_label = re.compile(
+        r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    )
+    labels = hostname.split(".")
+    if (
+        len(hostname) > 253
+        or not labels
+        or any(not valid_label.fullmatch(label) for label in labels)
+    ):
+        print(
+            "WARNING: ARGO_HOSTNAME must be a DNS hostname without a scheme, "
+            f"port, or path; skipping Argo trust injection: {hostname!r}"
+        )
+        return None
+    return hostname
+
+
+def argo_ingress_namespaces(ingresses: list[dict], hostname: str) -> set[str]:
+    """Return namespaces with an Ingress that serves ARGO_HOSTNAME."""
+    return {
+        ingress["namespace"]
+        for ingress in ingresses
+        if hostname in ingress["hosts"]
+    }
+
+
+def argo_endpoint_status(hostname: str) -> int:
+    """Return an HTTPS status code only when ARGO_HOSTNAME is TLS-reachable."""
+    if not SYSTEM_CA_BUNDLE_PATH.is_file():
+        raise CommandError(
+            f"System CA bundle does not exist: {SYSTEM_CA_BUNDLE_PATH}"
+        )
+
+    context = ssl.create_default_context(cafile=str(SYSTEM_CA_BUNDLE_PATH))
+    connection = http.client.HTTPSConnection(
+        hostname,
+        443,
+        timeout=8,
+        context=context,
+    )
+    try:
+        connection.request(
+            "GET",
+            "/",
+            headers={"User-Agent": "k3s-turing-pi-trust-certs/1"},
+        )
+        response = connection.getresponse()
+        response.read(1)
+        return response.status
+    except (OSError, http.client.HTTPException, ssl.SSLError) as exc:
+        raise CommandError(
+            f"https://{hostname}/ is not reachable with trusted TLS: {exc}"
+        ) from exc
+    finally:
+        connection.close()
+
+
+def workflow_controller_deployment(
+    kubectl: list[str], namespaces: set[str]
+) -> dict | None:
+    deployments = kubectl_json(
+        kubectl,
+        ["get", "deployment", "--all-namespaces", "-o", "json"],
+    )
+    for deployment in deployments.get("items", []):
+        metadata = deployment.get("metadata") or {}
+        if metadata.get("namespace") not in namespaces:
+            continue
+
+        containers = (
+            (((deployment.get("spec") or {}).get("template") or {}).get("spec") or {})
+            .get("containers", [])
+        )
+        is_controller = any(
+            container.get("name") == "workflow-controller"
+            or "/workflow-controller:" in container.get("image", "")
+            for container in containers
+        )
+        ready_replicas = (deployment.get("status") or {}).get("readyReplicas", 0)
+        if is_controller and ready_replicas > 0:
+            return deployment
+    return None
+
+
+def controller_configmap_name(deployment: dict) -> str:
+    metadata = deployment.get("metadata") or {}
+    deployment_name = metadata.get("name", "")
+    containers = (
+        (((deployment.get("spec") or {}).get("template") or {}).get("spec") or {})
+        .get("containers", [])
+    )
+    controller = next(
+        (
+            container
+            for container in containers
+            if container.get("name") == "workflow-controller"
+            or "/workflow-controller:" in container.get("image", "")
+        ),
+        None,
+    )
+    if controller:
+        args = controller.get("args") or []
+        for index, argument in enumerate(args):
+            if argument == "--configmap" and index + 1 < len(args):
+                return args[index + 1]
+            if argument.startswith("--configmap="):
+                return argument.split("=", 1)[1]
+
+    if deployment_name:
+        return f"{deployment_name}-configmap"
+    raise CommandError("Argo workflow controller Deployment has no name.")
+
+
+def merge_named_items(
+    existing: object,
+    desired: list[dict],
+    *,
+    field: str,
+) -> list[dict]:
+    """Merge Kubernetes list entries by name while preserving unrelated entries."""
+    if existing is None:
+        items: list[dict] = []
+    elif isinstance(existing, list) and all(isinstance(item, dict) for item in existing):
+        items = copy.deepcopy(existing)
+    else:
+        raise CommandError(
+            f"Argo workflowDefaults podSpecPatch '{field}' must be a list."
+        )
+
+    positions = {
+        item.get("name"): index
+        for index, item in enumerate(items)
+        if item.get("name")
+    }
+    for desired_item in desired:
+        name = desired_item["name"]
+        if name in positions:
+            items[positions[name]].update(copy.deepcopy(desired_item))
+        else:
+            positions[name] = len(items)
+            items.append(copy.deepcopy(desired_item))
+    return items
+
+
+def render_argo_workflow_defaults(current: str) -> str:
+    """Add the system CA bundle to Argo's default main-container Pod patch."""
+    try:
+        import yaml
+    except ImportError as exc:
+        raise CommandError(
+            "Python package 'yaml' is required to configure Argo workflow trust. "
+            "Install it with: sudo apt install python3-yaml"
+        ) from exc
+
+    try:
+        defaults = yaml.safe_load(current) if current.strip() else {}
+    except yaml.YAMLError as exc:
+        raise CommandError(f"Could not parse Argo workflowDefaults: {exc}") from exc
+    if defaults is None:
+        defaults = {}
+    if not isinstance(defaults, dict):
+        raise CommandError("Argo workflowDefaults must contain a YAML mapping.")
+
+    spec = defaults.setdefault("spec", {})
+    if not isinstance(spec, dict):
+        raise CommandError("Argo workflowDefaults 'spec' must be a YAML mapping.")
+
+    current_patch = spec.get("podSpecPatch", "")
+    if current_patch is None:
+        current_patch = ""
+    if not isinstance(current_patch, str):
+        raise CommandError("Argo workflowDefaults 'podSpecPatch' must be a string.")
+    try:
+        pod_patch = yaml.safe_load(current_patch) if current_patch.strip() else {}
+    except yaml.YAMLError as exc:
+        raise CommandError(
+            f"Could not parse Argo workflowDefaults podSpecPatch: {exc}"
+        ) from exc
+    if pod_patch is None:
+        pod_patch = {}
+    if not isinstance(pod_patch, dict):
+        raise CommandError("Argo workflowDefaults podSpecPatch must be a YAML mapping.")
+
+    class LiteralString(str):
+        pass
+
+    class LiteralSafeDumper(yaml.SafeDumper):
+        pass
+
+    LiteralSafeDumper.add_representer(
+        LiteralString,
+        lambda dumper, value: dumper.represent_scalar(
+            "tag:yaml.org,2002:str", value, style="|"
+        ),
+    )
+
+    pod_patch["volumes"] = merge_named_items(
+        pod_patch.get("volumes"),
+        [
+            {
+                "name": ARGO_CA_VOLUME_NAME,
+                "hostPath": {
+                    "path": str(SYSTEM_CA_BUNDLE_PATH),
+                    "type": "File",
+                },
+            }
+        ],
+        field="volumes",
+    )
+
+    containers = merge_named_items(
+        pod_patch.get("containers"),
+        [{"name": "main"}],
+        field="containers",
+    )
+    main = next(container for container in containers if container.get("name") == "main")
+    main["volumeMounts"] = merge_named_items(
+        main.get("volumeMounts"),
+        [
+            {
+                "name": ARGO_CA_VOLUME_NAME,
+                "mountPath": ARGO_CA_MOUNT_PATH,
+                "readOnly": True,
+            }
+        ],
+        field="containers[name=main].volumeMounts",
+    )
+    main["env"] = merge_named_items(
+        main.get("env"),
+        [
+            {"name": variable, "value": ARGO_CA_MOUNT_PATH}
+            for variable in ARGO_CA_ENVIRONMENT
+        ],
+        field="containers[name=main].env",
+    )
+    pod_patch["containers"] = containers
+    spec["podSpecPatch"] = LiteralString(
+        yaml.safe_dump(
+            pod_patch,
+            default_flow_style=False,
+            sort_keys=False,
+        )
+    )
+    return yaml.dump(
+        defaults,
+        Dumper=LiteralSafeDumper,
+        default_flow_style=False,
+        sort_keys=False,
+    )
+
+
+def render_argo_controller_config(current: str) -> str:
+    """Merge workflow trust into the Helm chart's data.config document."""
+    try:
+        import yaml
+    except ImportError as exc:
+        raise CommandError(
+            "Python package 'yaml' is required to configure Argo workflow trust. "
+            "Install it with: sudo apt install python3-yaml"
+        ) from exc
+
+    try:
+        controller_config = yaml.safe_load(current) if current.strip() else {}
+    except yaml.YAMLError as exc:
+        raise CommandError(f"Could not parse Argo controller config: {exc}") from exc
+    if controller_config is None:
+        controller_config = {}
+    if not isinstance(controller_config, dict):
+        raise CommandError("Argo controller config must contain a YAML mapping.")
+
+    workflow_defaults = controller_config.get("workflowDefaults") or {}
+    if not isinstance(workflow_defaults, dict):
+        raise CommandError("Argo controller 'workflowDefaults' must be a YAML mapping.")
+    rendered_defaults = render_argo_workflow_defaults(
+        yaml.safe_dump(
+            workflow_defaults,
+            default_flow_style=False,
+            sort_keys=False,
+        )
+    )
+    controller_config["workflowDefaults"] = yaml.safe_load(rendered_defaults)
+
+    class LiteralString(str):
+        pass
+
+    class LiteralSafeDumper(yaml.SafeDumper):
+        pass
+
+    LiteralSafeDumper.add_representer(
+        LiteralString,
+        lambda dumper, value: dumper.represent_scalar(
+            "tag:yaml.org,2002:str", value, style="|"
+        ),
+    )
+    workflow_spec = controller_config["workflowDefaults"]["spec"]
+    workflow_spec["podSpecPatch"] = LiteralString(workflow_spec["podSpecPatch"])
+    return yaml.dump(
+        controller_config,
+        Dumper=LiteralSafeDumper,
+        default_flow_style=False,
+        sort_keys=False,
+    )
+
+
+def inject_argo_workflow_trust(
+    kubectl: list[str],
+    ingresses: list[dict],
+    hostname: str,
+) -> tuple[str, str] | None:
+    namespaces = argo_ingress_namespaces(ingresses, hostname)
+    if not namespaces:
+        print(
+            f"Argo trust: no Ingress serves ARGO_HOSTNAME ({hostname}); skipping."
+        )
+        return None
+
+    try:
+        status = argo_endpoint_status(hostname)
+    except CommandError as exc:
+        print(f"Argo trust: {exc}; skipping.")
+        return None
+
+    deployment = workflow_controller_deployment(kubectl, namespaces)
+    if deployment is None:
+        print(
+            "Argo trust: HTTPS responded, but no Ready workflow controller was "
+            "found in the Ingress namespace; skipping."
+        )
+        return None
+
+    metadata = deployment.get("metadata") or {}
+    namespace = metadata["namespace"]
+    configmap_name = controller_configmap_name(deployment)
+    try:
+        configmap = kubectl_json(
+            kubectl,
+            ["get", "configmap", configmap_name, "-n", namespace, "-o", "json"],
+        )
+    except (CommandError, json.JSONDecodeError) as exc:
+        raise CommandError(
+            f"Could not read Argo controller ConfigMap "
+            f"{namespace}/{configmap_name}: {exc}"
+        ) from exc
+
+    data = configmap.get("data") or {}
+    if "config" in data:
+        data_key = "config"
+        rendered = render_argo_controller_config(data.get(data_key, ""))
+    else:
+        # Upstream manifests commonly store this setting as its own data key.
+        data_key = "workflowDefaults"
+        rendered = render_argo_workflow_defaults(data.get(data_key, ""))
+    if data.get(data_key) == rendered:
+        print(
+            f"Argo trust: https://{hostname}/ responded with HTTP {status}; "
+            f"{namespace}/{configmap_name} is already configured."
+        )
+        return namespace, configmap_name
+
+    patch = json.dumps({"data": {data_key: rendered}})
+    run(
+        kubectl
+        + [
+            "patch",
+            "configmap",
+            configmap_name,
+            "-n",
+            namespace,
+            "--type=merge",
+            "-p",
+            patch,
+        ]
+    )
+    print(
+        f"Argo trust: https://{hostname}/ responded with HTTP {status}; updated "
+        f"{namespace}/{configmap_name}."
+    )
+    return namespace, configmap_name
 
 
 def ready_k3s_nodes(kubectl: list[str]) -> list[dict[str, str]]:
@@ -711,7 +1117,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Trust private/self-signed certificates used by K3s Ingress "
-            "endpoints system-wide."
+            "endpoints system-wide and inject them into Argo Workflow Pods."
         )
     )
     parser.add_argument(
@@ -745,13 +1151,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-node-distribution",
         action="store_true",
-        help="Configure only this machine; do not copy trust to Ready K3s nodes.",
+        help=(
+            "Configure only this machine; do not copy trust to Ready K3s nodes "
+            "or configure Argo Workflow Pods."
+        ),
     )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    argo_hostname = configured_argo_hostname()
 
     if os.geteuid() != 0:
         print(
@@ -939,6 +1349,24 @@ def main() -> int:
             print(f"ERROR: node distribution failed: {exc}", file=sys.stderr)
             return 1
         print(f"Updated {distributed} remote K3s node(s).")
+
+    if argo_hostname and args.skip_node_distribution:
+        print(
+            "\nArgo trust: node distribution was skipped, so workflow trust "
+            "injection was also skipped."
+        )
+    elif argo_hostname:
+        print("\nChecking Argo Workflows trust integration...")
+        try:
+            inject_argo_workflow_trust(kubectl, ingresses, argo_hostname)
+        except (CommandError, json.JSONDecodeError, OSError) as exc:
+            print(
+                f"ERROR: could not configure Argo workflow trust: {exc}",
+                file=sys.stderr,
+            )
+            return 1
+    else:
+        print("\nArgo trust: ARGO_HOSTNAME is not configured; skipping.")
 
     try:
         local_service = restart_local_k3s()

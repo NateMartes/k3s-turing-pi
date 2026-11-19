@@ -197,6 +197,13 @@ containerd reloads the configuration. Entries for services that are not image
 registries are harmless; containerd only uses an entry when an image reference
 names that host as its registry.
 
+When Argo is reachable at `ARGO_HOSTNAME` and its workflow controller is
+Ready, the script also adds the merged node system CA bundle to Argo's workflow
+defaults. New workflow `main` containers mount that bundle read-only and receive
+the common CA environment variables, so PEM-based clients can trust every
+sysadmin service without per-workflow certificate configuration. Existing
+workflow Pods are not modified; re-submit them after running the trust command.
+
 The SSH user defaults to the account that invoked `sudo`. It must have
 key-based access and passwordless `sudo` on every K3s node. Specify a different
 remote account with `--ssh-user USER` when necessary.

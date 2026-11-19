@@ -22,7 +22,12 @@ Chromium trust stores, configures every sysadmin-service hostname with the
 shared CA bundle in K3s's `registries.yaml`, and uses SSH/SCP to install the
 same trust configuration on every Ready K3s node. K3s is restarted on updated
 nodes so containerd can pull images from any sysadmin service that acts as a
-registry.
+registry. When `ARGO_HOSTNAME` resolves to a reachable Argo Workflows Ingress
+and its workflow controller is Ready, the command also updates Argo's workflow
+defaults. New workflow `main` containers receive the node's merged system CA
+bundle as a read-only file and the common TLS environment variables point to
+that bundle. Existing public roots remain available alongside every discovered
+sysadmin-service CA.
 
 ```bash
 sudo ./trust-k3s-crets
@@ -32,6 +37,8 @@ The remote SSH user defaults to the account that invoked `sudo`. Use
 `--ssh-user` when the K3s nodes use a different account. That account must have
 key-based SSH access and passwordless `sudo` on the nodes. Use
 `--skip-node-distribution` to update only the current machine.
+That option also skips Argo workflow trust injection because workflow Pods can
+run on any Ready node.
 
 ### `create-user`
 
