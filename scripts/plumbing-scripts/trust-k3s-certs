@@ -1,0 +1,959 @@
+#!/usr/bin/env python3
+"""
+trust-k3s-certs
+
+Discover certificates used by K3s Ingress endpoints and install appropriate
+self-signed/private CA certificates into:
+
+  1. The Ubuntu system CA trust store
+  2. Chromium's machine-wide CACertificates enterprise policy
+  3. K3s containerd registry trust for every Jihwija-service Ingress
+
+The script then copies the certificates and merged K3s registry configuration
+to every Ready K3s node over SSH/SCP and restarts K3s on those nodes.
+
+Discovery sources:
+  * Ingress TLS Secrets (ca.crt / tls.crt)
+  * The certificate chain actually served by every Ingress hostname on :443
+
+Requirements:
+  * Python 3
+  * openssl
+  * k3s or kubectl
+  * update-ca-certificates
+  * ssh and scp
+  * PyYAML
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import copy
+import hashlib
+import json
+import os
+import pwd
+import re
+import shutil
+import socket
+import ssl
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+TRUST_DIR = Path("/usr/local/share/ca-certificates/k3s")
+CHROMIUM_POLICY_DIR = Path("/etc/chromium/policies/managed")
+CHROMIUM_BROWSER_POLICY_DIR = Path("/etc/chromium-browser/policies/managed")
+CHROME_POLICY_DIR = Path("/etc/opt/chrome/policies/managed")
+POLICY_FILENAME = "k3s-trusted-cas.json"
+K3S_CONFIG_DIR = Path("/etc/rancher/k3s")
+K3S_REGISTRIES_PATH = K3S_CONFIG_DIR / "registries.yaml"
+K3S_CA_BUNDLE_PATH = K3S_CONFIG_DIR / "jihwija-services-ca-bundle.pem"
+
+PEM_CERT_RE = re.compile(
+    rb"-----BEGIN CERTIFICATE-----\s+.*?-----END CERTIFICATE-----",
+    re.DOTALL,
+)
+
+
+class CommandError(RuntimeError):
+    pass
+
+
+def run(
+    cmd: list[str],
+    *,
+    input_bytes: bytes | None = None,
+    timeout: int | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess:
+    try:
+        proc = subprocess.run(
+            cmd,
+            input=input_bytes,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise CommandError(f"Command timed out: {' '.join(cmd)}") from exc
+
+    if check and proc.returncode != 0:
+        raise CommandError(
+            f"Command failed ({proc.returncode}): {' '.join(cmd)}\n"
+            f"{proc.stderr.decode(errors='replace').strip()}"
+        )
+    return proc
+
+
+def choose_kubectl(explicit: str | None) -> list[str]:
+    if explicit:
+        return explicit.split()
+
+    if shutil.which("k3s"):
+        return ["k3s", "kubectl"]
+
+    if shutil.which("kubectl"):
+        return ["kubectl"]
+
+    raise SystemExit("ERROR: neither 'k3s' nor 'kubectl' was found in PATH.")
+
+
+def kubectl_json(kubectl: list[str], args: list[str]) -> dict:
+    return json.loads(run(kubectl + args).stdout)
+
+
+def validate_registry_host(host: str) -> str:
+    if not re.fullmatch(
+        r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[0-9]{1,5})?",
+        host,
+    ):
+        raise CommandError(
+            f"Invalid Jihwija-service hostname discovered from Ingress: {host!r}"
+        )
+    return host
+
+
+def validate_ssh_user(username: str) -> str:
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*", username):
+        raise CommandError(f"Invalid SSH username: {username!r}")
+    return username
+
+
+def validate_node_address(address: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_.:-]+", address) or address.startswith("-"):
+        raise CommandError(f"Invalid Kubernetes node address: {address!r}")
+    return address
+
+
+def split_pem_certificates(data: bytes) -> list[bytes]:
+    return [m.group(0).strip() + b"\n" for m in PEM_CERT_RE.finditer(data)]
+
+
+def fingerprint(cert: bytes) -> str:
+    return hashlib.sha256(cert).hexdigest()
+
+
+def sanitize(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", value)
+
+
+def openssl_text(cert: bytes, args: list[str]) -> str:
+    with tempfile.NamedTemporaryFile(suffix=".crt") as tmp:
+        tmp.write(cert)
+        tmp.flush()
+        out = run(["openssl", "x509", "-in", tmp.name, "-noout"] + args).stdout
+    return out.decode(errors="replace").strip()
+
+
+def cert_subject(cert: bytes) -> str:
+    return openssl_text(cert, ["-subject"]).removeprefix("subject=").strip()
+
+
+def cert_issuer(cert: bytes) -> str:
+    return openssl_text(cert, ["-issuer"]).removeprefix("issuer=").strip()
+
+
+def cert_dates(cert: bytes) -> str:
+    try:
+        return openssl_text(cert, ["-dates"]).replace("\n", ", ")
+    except CommandError:
+        return ""
+
+
+def is_self_signed(cert: bytes) -> bool:
+    try:
+        if cert_subject(cert) != cert_issuer(cert):
+            return False
+
+        with tempfile.NamedTemporaryFile(suffix=".crt") as tmp:
+            tmp.write(cert)
+            tmp.flush()
+            proc = subprocess.run(
+                ["openssl", "verify", "-CAfile", tmp.name, tmp.name],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        return proc.returncode == 0
+    except (CommandError, OSError):
+        return False
+
+
+def is_ca(cert: bytes) -> bool:
+    try:
+        text = openssl_text(cert, ["-text"])
+        return "CA:TRUE" in text
+    except CommandError:
+        return False
+
+
+def pem_to_der_b64(cert: bytes) -> str:
+    pem_text = cert.decode("ascii")
+    der = ssl.PEM_cert_to_DER_cert(pem_text)
+    return base64.b64encode(der).decode("ascii")
+
+
+def fetch_endpoint_chain(host: str, port: int = 443) -> list[bytes]:
+    """
+    Fetch the TLS chain exactly as served to clients.
+
+    openssl s_client commonly exits 0 even when verification fails, which is
+    useful here because discovery must work before the CA is trusted.
+    """
+    cmd = [
+        "openssl",
+        "s_client",
+        "-connect",
+        f"{host}:{port}",
+        "-servername",
+        host,
+        "-showcerts",
+    ]
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            input=b"",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=8,
+        )
+    except subprocess.TimeoutExpired:
+        return []
+
+    return split_pem_certificates(proc.stdout)
+
+
+def choose_trust_anchors(certs: list[bytes]) -> list[bytes]:
+    """
+    Prefer actual self-signed roots.
+
+    If an endpoint serves one self-signed certificate (common for internal
+    Portainer/Traefik certificates), that certificate becomes the trust anchor.
+    """
+    roots = [cert for cert in certs if is_self_signed(cert)]
+    if roots:
+        return roots
+
+    # If the chain has a CA cert but not the self-signed root, trusting that
+    # private intermediate can still make the local chain usable.
+    cas = [cert for cert in certs if is_ca(cert)]
+    if cas:
+        return [cas[-1]]
+
+    return []
+
+
+def candidate_from_secret(secret: dict) -> tuple[list[bytes], str]:
+    data = secret.get("data") or {}
+
+    ca_b64 = data.get("ca.crt")
+    if ca_b64:
+        decoded = base64.b64decode(ca_b64)
+        certs = split_pem_certificates(decoded)
+        if certs:
+            anchors = choose_trust_anchors(certs)
+            return (anchors or certs), "secret ca.crt"
+
+    tls_b64 = data.get("tls.crt")
+    if tls_b64:
+        decoded = base64.b64decode(tls_b64)
+        certs = split_pem_certificates(decoded)
+        anchors = choose_trust_anchors(certs)
+        if anchors:
+            return anchors, "self-signed/CA certificate from secret tls.crt"
+
+    return [], "no usable trust anchor in Secret"
+
+
+def discover_ingresses(
+    kubectl: list[str],
+    namespaces: set[str] | None,
+) -> list[dict]:
+    obj = kubectl_json(
+        kubectl,
+        ["get", "ingress", "--all-namespaces", "-o", "json"],
+    )
+
+    results = []
+    for ingress in obj.get("items", []):
+        metadata = ingress["metadata"]
+        namespace = metadata["namespace"]
+
+        if namespaces and namespace not in namespaces:
+            continue
+
+        name = metadata["name"]
+        spec = ingress.get("spec") or {}
+
+        hosts = set()
+        backend_services = set()
+        for rule in spec.get("rules", []) or []:
+            host = rule.get("host")
+            if host:
+                hosts.add(host)
+            http = rule.get("http") or {}
+            for path in http.get("paths", []) or []:
+                service = ((path.get("backend") or {}).get("service") or {})
+                service_name = service.get("name")
+                if service_name:
+                    backend_services.add(service_name)
+
+        default_service = ((spec.get("defaultBackend") or {}).get("service") or {})
+        if default_service.get("name"):
+            backend_services.add(default_service["name"])
+
+        secrets: dict[str, set[str]] = {}
+        for tls in spec.get("tls", []) or []:
+            tls_hosts = set(tls.get("hosts") or [])
+            hosts.update(tls_hosts)
+
+            secret = tls.get("secretName")
+            if secret:
+                secrets.setdefault(secret, set()).update(tls_hosts)
+
+        results.append(
+            {
+                "namespace": namespace,
+                "name": name,
+                "labels": metadata.get("labels") or {},
+                "hosts": sorted(hosts),
+                "secrets": secrets,
+                "backend_services": sorted(backend_services),
+            }
+        )
+
+    return results
+
+
+def discover_jihwija_registry_hosts(
+    ingresses: list[dict],
+    explicit: list[str],
+) -> list[str]:
+    hosts = {
+        validate_registry_host(host)
+        for ingress in ingresses
+        if ingress["namespace"] == "jihwija-system"
+        for host in ingress["hosts"]
+    }
+    hosts.update(validate_registry_host(host) for host in explicit)
+    if not hosts:
+        raise CommandError(
+            "Could not discover any Jihwija-service hostnames from Ingress "
+            "resources in namespace 'jihwija-system'. Ensure the services are "
+            "deployed, or pass --registry-host for an additional hostname."
+        )
+    return sorted(hosts)
+
+
+def ready_k3s_nodes(kubectl: list[str]) -> list[dict[str, str]]:
+    obj = kubectl_json(kubectl, ["get", "nodes", "-o", "json"])
+    nodes = []
+    for node in obj.get("items", []):
+        conditions = (node.get("status") or {}).get("conditions") or []
+        if not any(
+            condition.get("type") == "Ready" and condition.get("status") == "True"
+            for condition in conditions
+        ):
+            continue
+
+        metadata = node.get("metadata") or {}
+        name = metadata.get("name")
+        if not name:
+            continue
+        addresses = (node.get("status") or {}).get("addresses") or []
+        address = None
+        for address_type in ("InternalIP", "ExternalIP", "Hostname"):
+            address = next(
+                (
+                    item.get("address")
+                    for item in addresses
+                    if item.get("type") == address_type and item.get("address")
+                ),
+                None,
+            )
+            if address:
+                break
+        if not address:
+            raise CommandError(f"Ready node {name!r} has no usable address.")
+
+        labels = metadata.get("labels") or {}
+        is_server = any(
+            role in labels
+            for role in (
+                "node-role.kubernetes.io/control-plane",
+                "node-role.kubernetes.io/master",
+                "node-role.kubernetes.io/etcd",
+            )
+        )
+        nodes.append(
+            {
+                "name": name,
+                "address": validate_node_address(address),
+                "service": "k3s" if is_server else "k3s-agent",
+            }
+        )
+
+    if not nodes:
+        raise CommandError("No Ready K3s nodes were found.")
+    return nodes
+
+
+def write_cert(source_id: str, cert: bytes) -> Path:
+    TRUST_DIR.mkdir(parents=True, exist_ok=True)
+
+    path = TRUST_DIR / f"{sanitize(source_id)}.crt"
+    current = path.read_bytes() if path.exists() else None
+
+    if current != cert:
+        path.write_bytes(cert)
+        os.chmod(path, 0o644)
+
+    return path
+
+
+def all_managed_certs() -> list[bytes]:
+    certs: list[bytes] = []
+    seen: set[str] = set()
+
+    if not TRUST_DIR.exists():
+        return certs
+
+    for path in sorted(TRUST_DIR.glob("*.crt")):
+        for cert in split_pem_certificates(path.read_bytes()):
+            fp = fingerprint(cert)
+            if fp in seen:
+                continue
+            seen.add(fp)
+            certs.append(cert)
+
+    return certs
+
+
+def atomic_write(path: Path, data: bytes, mode: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as tmp:
+        temporary_path = Path(tmp.name)
+        tmp.write(data)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+    try:
+        os.chmod(temporary_path, mode)
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def write_ca_bundle(certs: list[bytes]) -> Path:
+    bundle = b"".join(cert.rstrip() + b"\n" for cert in certs)
+    current = K3S_CA_BUNDLE_PATH.read_bytes() if K3S_CA_BUNDLE_PATH.exists() else None
+    if current != bundle:
+        atomic_write(K3S_CA_BUNDLE_PATH, bundle, 0o644)
+    return K3S_CA_BUNDLE_PATH
+
+
+def merge_k3s_registry_config(registry_hosts: list[str]) -> tuple[Path, Path | None]:
+    try:
+        import yaml
+    except ImportError as exc:
+        raise CommandError(
+            "Python package 'yaml' is required to preserve existing K3s registry "
+            "configuration. Install it with: sudo apt install python3-yaml"
+        ) from exc
+
+    existing_bytes = (
+        K3S_REGISTRIES_PATH.read_bytes() if K3S_REGISTRIES_PATH.exists() else b""
+    )
+    try:
+        existing = yaml.safe_load(existing_bytes) if existing_bytes.strip() else {}
+    except yaml.YAMLError as exc:
+        raise CommandError(f"Could not parse {K3S_REGISTRIES_PATH}: {exc}") from exc
+    if not isinstance(existing, dict):
+        raise CommandError(f"{K3S_REGISTRIES_PATH} must contain a YAML mapping.")
+
+    merged = copy.deepcopy(existing)
+    configs = merged.setdefault("configs", {})
+    if not isinstance(configs, dict):
+        raise CommandError(f"{K3S_REGISTRIES_PATH}: 'configs' must be a mapping.")
+    for registry_host in registry_hosts:
+        registry = configs.setdefault(registry_host, {})
+        if not isinstance(registry, dict):
+            raise CommandError(
+                f"{K3S_REGISTRIES_PATH}: config for {registry_host!r} must be a mapping."
+            )
+        tls = registry.setdefault("tls", {})
+        if not isinstance(tls, dict):
+            raise CommandError(
+                f"{K3S_REGISTRIES_PATH}: TLS config for {registry_host!r} must be a mapping."
+            )
+        tls["ca_file"] = str(K3S_CA_BUNDLE_PATH)
+
+    rendered = yaml.safe_dump(merged, default_flow_style=False, sort_keys=False).encode()
+    backup = None
+    if rendered != existing_bytes:
+        if K3S_REGISTRIES_PATH.exists():
+            backup = K3S_REGISTRIES_PATH.with_name(
+                f"{K3S_REGISTRIES_PATH.name}.bak.{time.strftime('%Y%m%d%H%M%S')}"
+            )
+            shutil.copy2(K3S_REGISTRIES_PATH, backup)
+            os.chmod(backup, 0o600)
+        atomic_write(K3S_REGISTRIES_PATH, rendered, 0o600)
+
+    return K3S_REGISTRIES_PATH, backup
+
+
+def local_node_names() -> set[str]:
+    names = {socket.gethostname(), socket.getfqdn()}
+    names.update(name.split(".", 1)[0] for name in list(names))
+    return {name for name in names if name}
+
+
+def ssh_client_prefix() -> list[str]:
+    sudo_user = os.environ.get("SUDO_USER")
+    if not sudo_user or sudo_user == "root":
+        return []
+    try:
+        pwd.getpwnam(sudo_user)
+    except KeyError as exc:
+        raise CommandError(f"SUDO_USER account does not exist: {sudo_user!r}") from exc
+    if not shutil.which("runuser"):
+        raise CommandError("runuser is required to use the invoking user's SSH keys.")
+    return ["runuser", "-u", sudo_user, "--"]
+
+
+def ssh_destination(username: str, address: str, *, scp: bool = False) -> str:
+    formatted = f"[{address}]" if scp and ":" in address else address
+    return f"{username}@{formatted}"
+
+
+def distribute_to_ready_nodes(
+    nodes: list[dict[str, str]],
+    ssh_user: str,
+    registry_path: Path,
+    bundle_path: Path,
+) -> int:
+    prefix = ssh_client_prefix()
+    ssh_options = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+    local_names = local_node_names()
+    local_uid = None
+    sudo_user = os.environ.get("SUDO_USER")
+    if prefix and sudo_user:
+        local_uid = pwd.getpwnam(sudo_user).pw_uid
+        local_gid = pwd.getpwnam(sudo_user).pw_gid
+
+    trust_files = sorted(TRUST_DIR.glob("*.crt"))
+    if not trust_files:
+        raise CommandError(f"No certificate files were found in {TRUST_DIR}.")
+
+    distributed = 0
+    with tempfile.TemporaryDirectory(prefix="jihwija-trust-") as staging_name:
+        staging = Path(staging_name)
+        staged_files = []
+        for source in [*trust_files, bundle_path, registry_path]:
+            destination = staging / source.name
+            shutil.copy2(source, destination)
+            os.chmod(destination, 0o600)
+            staged_files.append(destination)
+
+        if local_uid is not None:
+            os.chown(staging, local_uid, local_gid)
+            for path in staged_files:
+                os.chown(path, local_uid, local_gid)
+
+        for node in nodes:
+            if node["name"] in local_names or node["name"].split(".", 1)[0] in local_names:
+                print(f"  {node['name']}: configured locally")
+                continue
+
+            target = ssh_destination(ssh_user, node["address"])
+            scp_target = ssh_destination(ssh_user, node["address"], scp=True)
+            remote_dir = f"/tmp/jihwija-trust-{os.getpid()}"
+            print(f"  {node['name']} ({node['address']}): copying trust configuration")
+            try:
+                run(
+                    prefix
+                    + ["ssh", *ssh_options, target, "mkdir", "-m", "700", remote_dir],
+                    timeout=20,
+                )
+                run(
+                    prefix
+                    + [
+                        "scp",
+                        *ssh_options,
+                        *[str(path) for path in staged_files],
+                        f"{scp_target}:{remote_dir}/",
+                    ],
+                    timeout=60,
+                )
+                run(
+                    prefix
+                    + [
+                        "ssh", *ssh_options, target,
+                        "sudo", "-n", "install", "-d", "-o", "root", "-g", "root",
+                        "-m", "0755", str(TRUST_DIR), str(K3S_CONFIG_DIR),
+                    ],
+                    timeout=20,
+                )
+                run(
+                    prefix
+                    + [
+                        "ssh", *ssh_options, target,
+                        "sudo", "-n", "install", "-o", "root", "-g", "root",
+                        "-m", "0644",
+                        *[f"{remote_dir}/{path.name}" for path in staged_files if path.suffix == ".crt"],
+                        str(TRUST_DIR),
+                    ],
+                    timeout=30,
+                )
+                run(
+                    prefix
+                    + [
+                        "ssh", *ssh_options, target,
+                        "sudo", "-n", "install", "-o", "root", "-g", "root",
+                        "-m", "0644", f"{remote_dir}/{bundle_path.name}",
+                        str(K3S_CA_BUNDLE_PATH),
+                    ],
+                    timeout=20,
+                )
+                run(
+                    prefix
+                    + [
+                        "ssh", *ssh_options, target,
+                        "sudo", "-n", "install", "--backup=numbered",
+                        "-o", "root", "-g", "root", "-m", "0600",
+                        f"{remote_dir}/{registry_path.name}", str(K3S_REGISTRIES_PATH),
+                    ],
+                    timeout=20,
+                )
+                run(
+                    prefix
+                    + ["ssh", *ssh_options, target, "sudo", "-n", "update-ca-certificates"],
+                    timeout=120,
+                )
+                run(
+                    prefix
+                    + [
+                        "ssh", *ssh_options, target,
+                        "sudo", "-n", "systemctl", "restart", node["service"],
+                    ],
+                    timeout=120,
+                )
+                distributed += 1
+            finally:
+                run(
+                    prefix
+                    + ["ssh", *ssh_options, target, "rm", "-rf", remote_dir],
+                    timeout=20,
+                    check=False,
+                )
+    return distributed
+
+
+def restart_local_k3s() -> str | None:
+    for service in ("k3s", "k3s-agent"):
+        result = run(
+            ["systemctl", "show", "--property=LoadState", "--value", service],
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip() not in (b"", b"not-found"):
+            run(["systemctl", "restart", service], timeout=120)
+            return service
+    return None
+
+
+def chromium_policy_dirs() -> list[Path]:
+    """
+    Return Chromium's machine-wide policy paths.
+
+    Ubuntu's chromium-browser package uses a different path from other
+    Chromium builds. Always include both paths so write_chromium_policy() can
+    create the required directory when it does not exist yet. Google Chrome is
+    supported when installed as well.
+    """
+    dirs = [CHROMIUM_POLICY_DIR, CHROMIUM_BROWSER_POLICY_DIR]
+
+    if shutil.which("google-chrome") or shutil.which("google-chrome-stable"):
+        dirs.append(CHROME_POLICY_DIR)
+
+    # Remove duplicates while preserving order.
+    unique = []
+    seen = set()
+    for path in dirs:
+        if str(path) not in seen:
+            seen.add(str(path))
+            unique.append(path)
+    return unique
+
+
+def write_chromium_policy(certs: list[bytes]) -> list[Path]:
+    values = sorted({pem_to_der_b64(cert) for cert in certs})
+    payload = {
+        "CACertificates": values,
+    }
+
+    written = []
+    for directory in chromium_policy_dirs():
+        directory.mkdir(parents=True, exist_ok=True)
+        os.chmod(directory, 0o755)
+
+        path = directory / POLICY_FILENAME
+        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        os.chmod(path, 0o644)
+        written.append(path)
+
+    return written
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Trust private/self-signed certificates used by K3s Ingress "
+            "endpoints system-wide and configure K3s registry trust."
+        )
+    )
+    parser.add_argument(
+        "-n",
+        "--namespace",
+        action="append",
+        default=[],
+        help="Only inspect this namespace. May be specified multiple times.",
+    )
+    parser.add_argument(
+        "--kubectl",
+        help="kubectl command to use, e.g. 'k3s kubectl' or 'kubectl'.",
+    )
+    parser.add_argument(
+        "--registry-host",
+        action="append",
+        default=[],
+        help=(
+            "Additional hostname to configure with the jihwija-services CA "
+            "bundle. May be specified more than once; deployed jihwija-system "
+            "Ingress hosts are discovered automatically."
+        ),
+    )
+    parser.add_argument(
+        "--ssh-user",
+        help=(
+            "Remote SSH user for K3s nodes. Defaults to the user that invoked "
+            "sudo, or root when SUDO_USER is unavailable."
+        ),
+    )
+    parser.add_argument(
+        "--skip-node-distribution",
+        action="store_true",
+        help=(
+            "Configure only this machine; do not copy trust to Ready K3s nodes."
+        ),
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+
+    if os.geteuid() != 0:
+        print(
+            "ERROR: this script must run as root because it updates the "
+            "system CA store and Chromium machine policy.",
+            file=sys.stderr,
+        )
+        return 1
+
+    required_commands = ["openssl", "update-ca-certificates"]
+    if not args.skip_node_distribution:
+        required_commands.extend(["ssh", "scp"])
+    for required in required_commands:
+        if shutil.which(required) is None:
+            print(
+                f"ERROR: required command '{required}' was not found.",
+                file=sys.stderr,
+            )
+            return 1
+
+    kubectl = choose_kubectl(args.kubectl)
+    namespace_filter = set(args.namespace) if args.namespace else None
+
+    try:
+        ingresses = discover_ingresses(kubectl, namespace_filter)
+    except (CommandError, json.JSONDecodeError) as exc:
+        print(f"ERROR: unable to query Kubernetes: {exc}", file=sys.stderr)
+        return 1
+
+    if not ingresses:
+        print("No Kubernetes Ingress resources were found.")
+        return 0
+
+    try:
+        registry_hosts = discover_jihwija_registry_hosts(
+            ingresses, args.registry_host
+        )
+        nodes = [] if args.skip_node_distribution else ready_k3s_nodes(kubectl)
+        ssh_user = validate_ssh_user(
+            args.ssh_user or os.environ.get("SUDO_USER") or "root"
+        )
+    except (CommandError, json.JSONDecodeError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    print("\nJihwija service registry trust hosts:")
+    for registry_host in registry_hosts:
+        print(f"  {registry_host}")
+
+    discovered_fps: set[str] = set()
+
+    for ingress in ingresses:
+        namespace = ingress["namespace"]
+        ingress_name = ingress["name"]
+
+        print(f"\n[{namespace}/{ingress_name}]")
+
+        # 1. Read any explicit TLS Secrets referenced by the Ingress.
+        for secret_name in sorted(ingress["secrets"]):
+            try:
+                secret = kubectl_json(
+                    kubectl,
+                    [
+                        "get",
+                        "secret",
+                        secret_name,
+                        "-n",
+                        namespace,
+                        "-o",
+                        "json",
+                    ],
+                )
+            except (CommandError, json.JSONDecodeError) as exc:
+                print(f"  Secret {secret_name}: unavailable ({exc})")
+                continue
+
+            try:
+                anchors, source = candidate_from_secret(secret)
+            except Exception as exc:
+                print(f"  Secret {secret_name}: invalid certificate ({exc})")
+                continue
+
+            if not anchors:
+                print(f"  Secret {secret_name}: {source}")
+                continue
+
+            for index, cert in enumerate(anchors):
+                fp = fingerprint(cert)
+                discovered_fps.add(fp)
+                path = write_cert(
+                    f"{namespace}-{ingress_name}-secret-{secret_name}-{index}",
+                    cert,
+                )
+                print(f"  Secret {secret_name}: trusted {cert_subject(cert)}")
+                print(f"    -> {path}")
+
+        # 2. Independently inspect the certificate clients actually see.
+        for host in ingress["hosts"]:
+            print(f"  Endpoint https://{host}:443")
+
+            chain = fetch_endpoint_chain(host)
+            if not chain:
+                print("    WARNING: could not retrieve a TLS certificate chain")
+                continue
+
+            leaf = chain[0]
+            print(f"    served: {cert_subject(leaf)}")
+            dates = cert_dates(leaf)
+            if dates:
+                print(f"    {dates}")
+
+            anchors = choose_trust_anchors(chain)
+            if not anchors:
+                print(
+                    "    WARNING: endpoint chain contains no self-signed/private "
+                    "CA certificate that can safely be installed as a trust anchor"
+                )
+                continue
+
+            for index, cert in enumerate(anchors):
+                fp = fingerprint(cert)
+                discovered_fps.add(fp)
+                path = write_cert(
+                    f"{namespace}-{ingress_name}-endpoint-{host}-{index}",
+                    cert,
+                )
+                print(f"    trusted anchor: {cert_subject(cert)}")
+                print(f"      -> {path}")
+
+    managed = all_managed_certs()
+
+    if not managed:
+        print(
+            "\nERROR: no usable CA/self-signed certificates were discovered.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        bundle_path = write_ca_bundle(managed)
+        registry_path, registry_backup = merge_k3s_registry_config(registry_hosts)
+    except (CommandError, OSError) as exc:
+        print(f"ERROR: unable to configure K3s registry trust: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"\nK3s CA bundle: {bundle_path}")
+    print(f"K3s registry configuration: {registry_path}")
+    if registry_backup:
+        print(f"Previous registry configuration: {registry_backup}")
+
+    print("\nUpdating Debian/Ubuntu system trust store...")
+    try:
+        proc = run(["update-ca-certificates"])
+        output = proc.stdout.decode(errors="replace").strip()
+        if output:
+            print(output)
+    except CommandError as exc:
+        print(f"ERROR: update-ca-certificates failed:\n{exc}", file=sys.stderr)
+        return 1
+
+    print("\nUpdating Chromium machine-wide CA policy...")
+    policy_paths = write_chromium_policy(managed)
+
+    for path in policy_paths:
+        print(f"  {path}")
+
+    print(
+        f"\nInstalled {len(managed)} unique trust certificate(s)."
+    )
+    print(
+        "\nChromium: open chrome://policy and click 'Reload policies', "
+        "or completely restart Chromium."
+    )
+    print(
+        "The policy should appear as 'CACertificates'."
+    )
+
+    if nodes:
+        print(f"\nDistributing trust to {len(nodes)} Ready K3s node(s) as {ssh_user}...")
+        try:
+            distributed = distribute_to_ready_nodes(
+                nodes, ssh_user, registry_path, bundle_path
+            )
+        except (CommandError, OSError) as exc:
+            print(f"ERROR: node distribution failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Updated {distributed} remote K3s node(s).")
+
+    try:
+        local_service = restart_local_k3s()
+    except CommandError as exc:
+        print(f"ERROR: could not restart local K3s: {exc}", file=sys.stderr)
+        return 1
+    if local_service:
+        print(f"Restarted local {local_service} service.")
+    else:
+        print("No local K3s service was found; only remote K3s nodes were restarted.")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

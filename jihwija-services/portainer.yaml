@@ -1,0 +1,57 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: portainer
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/part-of: jihwija
+spec:
+  chart: portainer
+  repo: https://portainer.github.io/k8s/
+  version: 245.2.0
+  targetNamespace: jihwija-system
+  createNamespace: false
+  timeout: 10m
+  backOffLimit: 20
+  valuesContent: |-
+
+    localMgmt: false
+
+    enterpriseEdition:
+      enabled: false
+
+    nodeSelector:
+      jihwija-services: "true"
+
+    image:
+      repository: portainer/portainer-ce
+      tag: 2.45.2
+      pullPolicy: IfNotPresent
+
+    replicaCount: 1
+
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      tls:
+          # Rendered by scripts/plumbing-scripts/deploy-services from jihwija.env.
+        - hosts:
+           - ${PORTAINER_HOSTNAME}
+      hosts:
+          # Rendered by scripts/plumbing-scripts/deploy-services from jihwija.env.
+        - host: ${PORTAINER_HOSTNAME}
+          paths:
+            - path: "/"
+
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: local-path
+
+    service:
+      type: ClusterIP
+      httpPort: 9000
+      httpsPort: 9443
+
+    tls:
+      force: false

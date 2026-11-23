@@ -21,11 +21,11 @@ WORKFLOW_NAMESPACE="${USERNAME}-namespace"
 ARGO_HOSTNAME="argo.10.42.0.31.sslip.io"
 
 sudo kubectl get deployment argo-workflows-workflow-controller \
-  --namespace sysadmin-system
+  --namespace jihwija-system
 sudo kubectl get deployment argo-workflows-server \
-  --namespace sysadmin-system
+  --namespace jihwija-system
 sudo kubectl logs deployment/argo-workflows-server \
-  --namespace sysadmin-system \
+  --namespace jihwija-system \
   --tail 100 | grep 'authModes="\[client\]"'
 curl --silent --show-error \
   --output /dev/null \
@@ -40,7 +40,7 @@ The log check should print a startup line containing `authModes="[client]"`,
 and the final command should return `yes`. If Argo Server is not in client
 mode, follow the client-authentication setup in
 [Argo Workflow Runner](../argo/README.md#system-installation). If the endpoint
-check fails, verify the Argo Ingress and certificate in `sysadmin-system` as
+check fails, verify the Argo Ingress and certificate in `jihwija-system` as
 described in that setup.
 For users created before the current runner permissions were added, an
 administrator can rerun
@@ -97,7 +97,7 @@ keeps the workflow Pods for another 30 seconds so the CLI can finish streaming
 their logs, then removes them. The Workflow record remains with status
 `Succeeded`.
 
-The sysadmin Argo installation assigns small default CPU and memory resources
+The Jihwija Argo installation assigns small default CPU and memory resources
 to Argo's generated executor containers. The example also assigns resources to
 the generated `main` containers used by its Kubernetes resource templates.
 These settings are required because every user namespace quota requires CPU

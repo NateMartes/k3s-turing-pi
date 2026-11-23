@@ -3,3 +3,9 @@ snap/
 __pycache__/
 .ansible/
 .env
+.venv/
+*.bak
+scripts/state/
+etc/jihwija.env
+ansible/inventory.yml
+ansible/group_vars/all.yml

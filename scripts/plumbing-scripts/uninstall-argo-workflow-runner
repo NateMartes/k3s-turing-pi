@@ -4,7 +4,7 @@ import os
 import re
 from pathlib import Path
 
-from platform_common import determine_username, die, require_root, run
+from lib.platform_common import determine_username, die, require_root, run
 
 
 def validate_namespace(namespace: str) -> str:

@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from string import Template
 
-from platform_common import determine_username, die, get_user, require_root, run
+from lib.platform_common import determine_username, die, get_user, require_root, run
 
 
 MANIFEST_TEMPLATE = (

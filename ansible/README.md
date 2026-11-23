@@ -2,7 +2,7 @@
 
 Before running the playbooks, make sure every node:
 
-1. Has the `sysadmin` user, and it has sudo access.
+1. Has the SSH operator selected in the inventory, with sudo access.
 2. Can be accessed by SSH via this node (`ssh-keygen && ssh-copy-id <node-ip>`).
 
 The node marked `is_default_gateway: true` must also have upstream Internet
@@ -17,9 +17,10 @@ To run them, use:
 ansible-playbook <playbook> -i inventory.yml
 ```
 
-- `inventory.yml`: The cluster nodes. Set `k3s_host: true` on exactly one K3s
+- `inventory.yml`: The generated live cluster inventory; use
+  `inventory.example.yml` as a format reference. Set `k3s_host: true` on exactly one K3s
   server, `is_default_gateway: true` on exactly one Ubuntu gateway, and
-  `is_sysadmin_service_node: true` on each node that should run sysadmin
+  `is_jihwija_service_node: true` on each node that should run Jihwija
   workloads.
 - `distribute-hostnames.yml`: Adds every inventory node to the managed cluster
   block in `/etc/hosts` on every node, using its inventory name.
@@ -42,12 +43,12 @@ name.
 
 | Variable | Scope | Requirement/default | Description |
 | --- | --- | --- | --- |
-| `ansible_user` | All nodes | Optional; Ansible otherwise uses the current SSH user. This inventory sets `sysadmin`. | SSH account Ansible uses to connect to each node. The account must have sudo access. |
+| `ansible_user` | All nodes | Optional; Jihwija prompts for it and otherwise uses the invoking operator. | SSH account Ansible uses to connect to each node. The account must have sudo access. |
 | `k3s_version` | All nodes | Required by `setup-k3s.yml`. | Exact K3s release installed on every server and agent, such as `v1.36.1+k3s1`. |
 | `ansible_host` | Per host | Required for every node. | IP address or resolvable hostname Ansible uses for SSH. It is also written to the managed `/etc/hosts` block by `distribute-hostnames.yml`. |
 | `k3s_host` | Per host | Exactly one node must be `true`; missing values default to `false`. | Selects the K3s server. Every other inventory node becomes a K3s agent. |
 | `is_default_gateway` | Per host | Exactly one node must be `true`; missing values default to `false`. | Selects the Ubuntu node configured by `setup-default-gateway.yml` to route and NAT LAN IPv4 traffic. |
-| `is_sysadmin_service_node` | Per host | At least one node must be `true`; missing values default to `false`. | Adds the Kubernetes label `sysadmin-services=true`, allowing selected sysadmin workloads to run on the node. Harbor additionally requires that a selected node be AMD64. |
+| `is_jihwija_service_node` | Per host | At least one node must be `true`; missing values default to `false`. | Adds the Kubernetes label `jihwija-services=true`, allowing selected Jihwija workloads to run on the node. Harbor additionally requires that a selected node be AMD64. |
 | `is_desktop_node` | Per host | Optional; defaults to `false`. | Allows `setup-desktop-packages.yml` to modify the node. Nodes without this flag are skipped. |
 | `k3s_flannel_iface` | All nodes or per host | Optional; defaults to an empty string in `group_vars/all.yml`. | Pins Flannel to a stable network interface. Leave empty to let Flannel select the interface that routes the node IP. |
 | `netplan_dhcp_apply` | All nodes | Optional; defaults to `false`. | Applies the validated Netplan DHCP configuration immediately. Leave false to stage it safely. |
@@ -111,7 +112,8 @@ gateway as well as a conventional two-interface gateway.
 
 ## K3s networking
 
-Cluster network defaults are stored in `group_vars/all.yml`:
+Cluster network defaults are generated in `group_vars/all.yml`; the shipped
+defaults are documented in `group_vars/all.example.yml`:
 
 - Host LAN: `10.42.0.0/24`
 - Pod network: `10.244.0.0/16`

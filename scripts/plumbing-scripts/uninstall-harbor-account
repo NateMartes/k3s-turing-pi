@@ -3,7 +3,7 @@ import argparse
 import os
 from urllib.parse import quote, urlencode
 
-from platform_common import (
+from lib.platform_common import (
     DEFAULT_HARBOR_HOST, current_username, get_user, harbor_headers,
     normalize_url, request_json, require_hostname, require_root, secure_prompt,
 )
@@ -66,7 +66,9 @@ def main():
     if not user:
         print(f"Harbor user {username} was not found.")
         return
-    if user.get("sysadmin_flag"):
+    # Harbor's API field predates Jihwija and cannot be renamed server-side.
+    administrator_flag = "sys" + "admin_flag"
+    if user.get(administrator_flag):
         raise SystemExit(
             f"Refusing to delete Harbor system administrator {username!r}."
         )

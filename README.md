@@ -1,359 +1,79 @@
-# Managed K3s Turing Pi Cluster
+# Jihwija
 
-Welcome to an overview of a Turing Pi Cluster with K3s, Rancher, and more!
+<p align="center">
+  <img src="diagrams/jihwija-logo.svg" alt="Jihwija Logo" width="220">
+</p>
 
-Argo workflow Pods can use the repository's namespace-scoped
-[`argo-workflow-runner`](argo/README.md) service account with executor and
-temporary Service permissions.
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white" alt="Python 3.10+"></a>
+  <a href="https://www.ansible.com/"><img src="https://img.shields.io/badge/Ansible-EE0000?logo=ansible&logoColor=white" alt="Ansible"></a>
+  <a href="https://k3s.io/"><img src="https://img.shields.io/badge/K3s-FFC61C?logo=k3s&logoColor=black" alt="K3s"></a>
+  <a href="https://ubuntu.com/"><img src="https://img.shields.io/badge/Ubuntu-22.04%20%7C%2024.04%20%7C%2026.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache 2.0"></a>
+</p>
 
-![K3s Turing Pi cluster architecture](diagrams/k3s-turing-pi-diagram.png)
+Bak (Korean: 박; Hanja: 拍) is a wooden clapper used in Korean court and ritual music. The person playing the bak is called jipbak, serving as the conductor or musical supervisor for the group. More generally called a Jihwija (지휘자, “conductor”).
 
-Currently this setup supports:
+Jihwija turns a collection of Ubuntu machines into a managed, multi-user K3s cluster. It is a thin Python CLI over native Ansible, K3s, Kubernetes, Kustomize, and Helm tooling: the underlying playbooks, manifests, and plumbing scripts remain directly available to maintainers.
 
-- Ansible provisioning of K3s and more.
-- K3s deployment on Turing Pi nodes.
-- Rancher deployment into K3s.
-- Harbor registry deployment into K3s.
-- Portainer deployment into K3s.
-- Argo Workflows installation and namespace-scoped workflow execution.
-- NVIDIA GPU discovery and allocation in K3s.
-- User management and automated account creation for:
-  - Linux
-  - Portainer
-  - Rancher
-  - Harbor
+Jihwija provides:
 
-## Directories
+- **Single-Server K3s Provisioning:** Automated deployment and lifecycle management via native Ansible playbooks.
+- **Node Management:** Safe worker-node addition, validation, cordoning, draining, and removal.
+- **Turnkey Platform Services:** Integrated deployment of Rancher, Harbor registry, Portainer, Argo Workflows, cert-manager, and NVIDIA GPU device plugin.
+- **Service Certificate Trust:** Automatic cluster-wide distribution of TLS certificates and private CAs to OS trust stores, Chromium policies, and containerd registries.
+- **Multi-Tenant User Isolation:** Unified user provisioning across Linux, filesystem quotas, rootless Docker daemons, Portainer Agent endpoints, K3s namespaces with ResourceQuotas, Argo Workflows runners, Harbor registry projects, and Rancher projects.
 
-- `ansible`: Automated playbooks to install and set up software.
-- `argo`: Per-user workflow runner RBAC and shared workflow examples.
-- `etc`: Templates for files distributed to each node's `/etc` directory.
-- `scripts`: Programs to set up software for users and system-wide use.
-- `sysadmin-services`: Services running on this cluster, deployed via Kubernetes.
+![Jihwija cluster architecture](diagrams/jihwija-cluster-diagram.png)
+<p align="center">
+    Example of using Jihwija on a multi-node cluster
+</p>
 
-## Getting Started
+## Documentation
 
-0. Download the repository.
+Comprehensive operational and architecture guides are available in [`docs/`](docs/):
 
-   Using Git:
+| Guide | Description |
+| :--- | :--- |
+| **[Cluster Setup Guide](docs/SETUP.md)** | Step-by-step walkthrough for cluster initialization, K3s provisioning, service deployment, and node management via the Jihwija CLI or manual native pipelines. |
+| **[User Setup Guide](docs/SETUP_USERS.md)** | Dedicated guide for multi-tenant user provisioning, filesystem/K3s quotas, password updates, and service integrations. |
+| **[Web UI Tunneling](docs/TUNNELING.md)** | Instructions for accessing cluster dashboards (Rancher, Harbor, Portainer, Argo) from remote workstations via SOCKS5 proxy. |
+| **[Deploying an Argo Workflow](docs/DEPLOYING_ARGO_WORKFLOW.md)** | Guide to running batch tasks, ML workflows, and containerized pipelines with namespace runners. |
+| **[Adding a New Node](docs/ADDING_A_NEW_NODE.md)** | Hardware and OS preparation for Turing Pi RK1, Raspberry Pi, or generic x86 worker nodes. |
+| **[Adding a Jetson Orin](docs/ADDING_A_JETSON_ORIN.md)** | Preparing NVIDIA Jetson Orin modules with GPU drivers and container runtimes. |
 
-   ```bash
-   git clone https://github.com/NateMartes/k3s-turing-pi.git
-   cd k3s-turing-pi
-   ```
+Component-specific technical references:
+- **[Ansible Playbooks](ansible/README.md):** Directly runnable playbooks and inventory specifications.
+- **[Cluster Services](jihwija-services/README.md):** Kustomize overlays and HelmChart definitions.
+- **[Plumbing Scripts](scripts/README.md):** Directly executable maintainer scripts powering the CLI.
 
-   Alternatively, download the `master` branch as a tarball and extract it
-   directly into a `k3s-turing-pi` directory:
+---
 
-   ```bash
-   curl --fail --location \
-     https://github.com/NateMartes/k3s-turing-pi/archive/refs/heads/master.tar.gz \
-     --output k3s-turing-pi.tar.gz
-   mkdir -p k3s-turing-pi
-   tar --extract --gzip \
-     --file k3s-turing-pi.tar.gz \
-     --directory k3s-turing-pi \
-     --strip-components=1
-   cd k3s-turing-pi
-   ```
+## Install
 
-  **NOTE**: You probably want to keep some of your files around if you ever pull
-  an updated version of this repo (like `inventory.yml`)
-
-   ```bash
-   tar --extract --gzip \
-     --file k3s-turing-pi.tar.gz \
-     --directory k3s-turing-pi \
-     --exclude='*/ansible' \
-     --exclude='*/etc/sysadmin-env' \
-     --strip-components=1
-   ```
-
-   The `*/` prefix matches the top-level directory included in GitHub's source
-   archive. Add, remove, or change the exclusion patterns for the paths you do
-   not want to extract. Excluding `etc/sysadmin-env` preserves your configured
-   hostnames and credentials when updating from a source archive.
-
-1. Set up your nodes. Follow the appropriate guide for your hardware:
-
-   - [Adding a new node (like a RK1)](docs/ADDING_A_NEW_NODE.md)
-   - [Adding a Jetson Orin](docs/ADDING_A_JETSON_ORIN.md)
-
-2. Make sure this account has SSH access to all nodes in your cluster:
-
-   ```bash
-   ssh-keygen && ssh-copy-id sysadmin@<my-node>
-   ```
-
-   Every node should be able to SSH into every other node.
-
-3. Install Ansible on this node:
-
-   ```bash
-   sudo apt update && sudo apt install -y ansible
-   ```
-
-4. Ensure your node inventory (`ansible/inventory.yml`) points to every node.
-   See the inventory variable table in `ansible/README.md` for the supported
-   global and per-host settings.
-
-5. Configure the controller as the LAN's default gateway.
-   Depending on your setup, you won't have to do this. You might
-   A router acting as your default gateway, which is great too! But if you
-   don't and you are just using one central manchine to bridge your nodes to the
-   outside world, you'll need IP Forwarding:
-
-   ```bash
-   cd ansible && ansible-playbook -i inventory.yml setup-default-gateway.yml
-   ```
-
-   Exactly one Ubuntu node must have `is_default_gateway: true`.
-    This node must already have upstream Internet
-   access. The remaining nodes can use its `ansible_host` address as their IPv4
-   default gateway once the playbook finishes.
-
-    At this point, go onto one of your nodes and try to `curl` or `ping` a service
-    (like `google.com` or `ibm.com`) to make sure you the nodes can reach the internet.
-
-6. Distribute every inventory node's name to `/etc/hosts` on every node.
-   This is optional, but nice to have!
-
-   ```bash
-   cd ansible && ansible-playbook -i inventory.yml distribute-hostnames.yml
-   ```
-
-   This makes each node reachable by its inventory name (for example,
-   `my-very-cool-box`).
-
-7. Install common packages using Ansible:
-
-   ```bash
-   cd ansible && ansible-playbook -i inventory.yml setup-common-packages.yml
-   ```
-
-8. Install desktop packages on GUI nodes:
-
-   ```bash
-   cd ansible && ansible-playbook -i inventory.yml setup-desktop-packages.yml
-   ```
-
-   - Chromium is reinstalled with Snap since system-wide certificate trusting only
-     works in later versions, which `apt` doesn't provide.
-
-   **NOTE**: Only nodes with `is_desktop_node: true` in
-   `ansible/inventory.yml` are changed. Nodes where the variable is false or
-   missing are skipped.
-
-9. Set up K3s:
-
-   ```bash
-   cd ansible && ansible-playbook -i inventory.yml setup-k3s.yml
-   ```
-
-   The default K3s Pod network is `10.244.0.0/16`, deliberately separate from
-   the `10.42.0.0/24` host LAN. K3s uses the managed `1.1.1.1` upstream DNS
-   resolver instead of inheriting node-local resolver settings. Review
-   `ansible/group_vars/all.yml` before provisioning a cluster on a different
-   LAN or with a different DNS provider.
-    If in the future you ever add more nodes, just re-run this command to add them
-    to the cluster.
-
-10. Deploy sysadmin services to K3s:
-
-   Argo Workflows runs as a cluster-scoped controller and client-authenticated
-   server in `sysadmin-system`. If an older standalone installation exists,
-   remove its namespaced components before applying the sysadmin bundle:
-
-   ```bash
-   sudo k3s kubectl delete namespace argo --ignore-not-found
-   ```
-
-   If that installation came from Argo's official `install.yaml`, also remove
-   its obsolete cluster RBAC by following the
-   [Argo migration instructions](argo/README.md#migrating-the-old-installation).
-
-   ```bash
-   sudo install -D -o root -g root -m 600 \
-     ./etc/sysadmin-env /etc/k3s-turing-pi/sysadmin-env
-   sudo ./scripts/apply-sysadmin-services
-   ```
-
-   The first command copies the repository's configuration into `/etc` with
-   permissions that allow only root to read or change it. The administration
-   scripts load their configuration from `/etc/k3s-turing-pi/sysadmin-env`
-   automatically.
-
-   When values in `etc/sysadmin-env` change, rerun the `install` command above to
-   update `/etc/k3s-turing-pi/sysadmin-env`, then rerun the affected
-   administration command.
-
-   At this point, the sysadmin services can run on nodes marked
-   `is_sysadmin_service_node: true` in `ansible/inventory.yml`. The K3s setup
-   playbook gives those nodes the `sysadmin-services=true` Kubernetes label.
-
-   The Rancher, Harbor, Portainer, and Argo Server domain names come from
-   `RANCHER_HOSTNAME`, `HARBOR_HOSTNAME`, `PORTAINER_HOSTNAME`, and
-   `ARGO_HOSTNAME` in `/etc/k3s-turing-pi/sysadmin-env`. Harbor's initial
-   `admin` password comes from `HARBOR_ADMIN_PASSWORD`; Rancher's initial
-   administrator password comes from `RANCHER_BOOTSTRAP_PASSWORD`.
-
-11. Trust the certificates from the sysadmin K3s services
-   and distribute them to every Ready K3s node. The script discovers
-   every sysadmin-service hostname from the deployed Ingresses, configures K3s
-   containerd registry trust for all of them, and uses SSH/SCP to install the
-   configuration cluster-wide:
-
-   ```bash
-   sudo ./scripts/trust-k3s-crets
-   ```
-
-   The account invoking `sudo` must have key-based SSH access and passwordless
-   `sudo` on every K3s node. Pass `--ssh-user USER` when the remote account has
-   a different name.
-
-12. Log into Harbor at the configured `HARBOR_HOSTNAME` as `admin`, using
-    `HARBOR_ADMIN_PASSWORD`. Change the password after the initial login.
-
-13. Log into Portainer at the configured `PORTAINER_HOSTNAME` and create its
-    initial administrator account. Then create an API key and set it as
-    `PORTAINER_API_KEY` in `etc/sysadmin-env`, then reinstall the file at
-    `/etc/k3s-turing-pi/sysadmin-env` for user-management commands.
-
-14. Log into Rancher at the configured `RANCHER_HOSTNAME` as `admin`, using
-    `RANCHER_BOOTSTRAP_PASSWORD`. Rancher uses this only for initial setup and
-    prompts for the permanent administrator password on first login.
-
-    If your computer cannot reach the cluster network directly, use the
-    [SSH tunneling guide](docs/TUNNELING.md) to open the web services.
-
-That's it! Now you have K3s running some neat services!
-
-The pinned Harbor release runs on the AMD64 node marked
-`is_sysadmin_service_node: true` in `ansible/inventory.yml`. Harbor can store
-ARM64, AMD64, and multi-platform images regardless of the registry node's
-architecture.
-
-## Users
-
-### Making Users
-
-1. All of the above must be done.
-
-2. Get a Rancher API token from the current Rancher instance.
-
-   From the UI, log in, and then go to your account and create an API key.
-   Set the key as `RANCHER_TOKEN` in `etc/sysadmin-env`, reinstall it at
-   `/etc/k3s-turing-pi/sysadmin-env`. The file's `RANCHER_HOSTNAME` selects the
-   Rancher instance used by the scripts.
-
-3. Get a Portainer API token from the current Portainer instance.
-
-   From the UI, log in, and then go to your account and create an API key.
-   Set the key as `PORTAINER_API_KEY` in `etc/sysadmin-env`, then reinstall it at
-   `/etc/k3s-turing-pi/sysadmin-env`. The file also specifies
-   `PORTAINER_HOSTNAME` for the Portainer instance used by the scripts.
-
-4. Enable quotas for users:
-
-   ```bash
-   sudo ./scripts/enable-quotas /home
-   ```
-
-5. Install the system-wide profile that selects each user's namespace-scoped
-   kubeconfig without modifying their shell files:
-
-   ```bash
-   sudo install -D -o root -g root -m 644 \
-     ./etc/profile.d/k3s-turing-pi-kubeconfig.sh \
-     /etc/profile.d/k3s-turing-pi-kubeconfig.sh
-   ```
-
-6. Install the system-wide profile that configures the Argo CLI to use the
-   cluster's Argo Server and the token from each user's kubeconfig without
-   modifying users' shell files:
-
-   ```bash
-   sudo install -D -o root -g root -m 644 \
-     ./etc/profile.d/k3s-turing-pi-argo-variables.sh \
-     /etc/profile.d/k3s-turing-pi-argo-variables.sh
-   ```
-
-7. Run the create-user script:
-
-   ```bash
-   sudo ./scripts/create-user -u <new-user>
-   ```
-
-   Existing Linux accounts are reused without changing their password. They
-   are recorded as pre-existing so `remove-user` preserves the Linux account
-   and home directory.
-
-   To create resources only for selected services or features, pass a
-   comma-separated list with `--only` (or `-o`):
-
-   ```bash
-   sudo ./scripts/create-user -u sysadmin \
-     --only harbor
-   ```
-
-   Supported selections are `harbor`, `rancher`, `portainer`,
-   `portainer-agent`, `docker-rootless`, `argo-workflow-runner`, and
-   `k3s-namespace`. When `--only` is omitted, the entire list is selected.
-
-   Use `--no-quota` to skip all filesystem, K3s namespace, and Harbor project
-   quota prompts and configuration.
-
-This will make accounts on the services above, automatically. On first login,
-the installed system-wide profile selects the user's namespace-scoped
-`~/.kube/config`. The command's final summary groups the URL, username,
-password or token, and relevant project or namespace for Linux/rootless Docker
-with Docker Compose,
-K3s, Argo Workflows, Harbor, Rancher, and Portainer. Treat this output as
-sensitive.
-
-In the event of failures, you can revert the changes:
+Run the installer from a release checkout on the Ubuntu machine designated as the K3s server:
 
 ```bash
-sudo ./scripts/remove-user -u <new-user>
+git clone https://github.com/NateMartes/k3s-turing-pi.git
+cd k3s-turing-pi
+sudo ./install.sh
 ```
 
-To remove resources only for selected services, use the same comma-separated
-selection list:
+### What the Installer Does
 
-```bash
-sudo ./scripts/remove-user -u <new-user> \
-  --only harbor,rancher,portainer
-```
+1. **Installs System Dependencies:** Ensures `python3`, `python3-venv`, `git`, and other core tools are present.
+2. **Deploys Application Tree:** Synchronizes repository assets into `/opt/jihwija`.
+3. **Creates Isolated Python Environment:** Builds a dedicated virtual environment with all required CLI dependencies.
+4. **Exposes the CLI:** Symlinks `/usr/local/bin/jihwija` so `jihwija` is globally accessible in system `PATH`.
+5. **Configures Permissions & Preserves State:** Sets up secure state directories under `/opt/jihwija/scripts/state` (permissions `0700`). Reinstalling preserves existing inventories, cluster configuration, secrets, and user state.
 
-The state file is retained when unselected service resources remain.
-When `--only` is omitted, the entire service list is selected.
+### Requirements
 
-### Updating User Passwords
+- **OS:** Ubuntu Linux (22.04, 24.04, or 26.04 LTS recommended) on all nodes.
+- **Architecture:** Heterogeneous ARM64 and AMD64 nodes supported. Note: at least one node must be **AMD64 (x86_64)** to run the Harbor registry stack.
+- **SSH & Sudo:** The operator account must have passwordless SSH key access and `sudo` rights on every cluster node.
 
-```bash
-sudo ./scripts/change-user-password -u <new-user>
-```
+### Next Steps
 
-This will update the passwords in K3s services too!
-
-*Note:* The Portainer account of the user would be reset since Portainer does
-not allow a password to be updated.
-
-### Removing Users
-
-```bash
-sudo ./scripts/remove-user -u <new-user>
-```
-
-## Argo Workflow Runner
-
-The [`argo`](argo/README.md) directory provides a deployable
-`argo-workflow-runner` service account and the RBAC needed for workflow
-executor Pods to report results and manage temporary Services. The
-`create-user` and `remove-user` commands manage one runner in each user's K3s
-namespace and read-only access to shared `ClusterWorkflowTemplate` resources;
-the lower-level install and uninstall commands accept the target namespace
-explicitly. Set
-`spec.serviceAccountName: argo-workflow-runner` in the supplied workflow
-template. Follow [Deploying an Argo Workflow](docs/DEPLOYING_ARGO_WORKFLOW.md)
-to run the three-minute Flask example.
+- **To set up and deploy your cluster:** Proceed to the **[Cluster Setup Guide](docs/SETUP.md)**.
+- **To provision and manage cluster users:** Proceed to the **[User Setup Guide](docs/SETUP_USERS.md)**.

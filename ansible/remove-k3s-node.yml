@@ -1,0 +1,31 @@
+---
+- name: Remove K3s from one worker node
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Refuse to remove the K3s server
+      ansible.builtin.assert:
+        that:
+          - not (k3s_host | default(false) | bool)
+        fail_msg: The selected host is the K3s server and cannot be removed here.
+
+    - name: Check for the K3s agent uninstaller
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s-agent-uninstall.sh
+      register: k3s_agent_uninstaller
+
+    - name: Uninstall the K3s agent
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/k3s-agent-uninstall.sh
+      when: k3s_agent_uninstaller.stat.exists
+
+    - name: Remove residual K3s agent configuration
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher/k3s/config.yaml
+        - /etc/rancher/k3s/resolv.conf

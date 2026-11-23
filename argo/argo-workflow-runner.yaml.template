@@ -6,9 +6,9 @@ metadata:
   labels:
     app.kubernetes.io/name: argo-workflow-runner
     app.kubernetes.io/instance: ${NAMESPACE}
-    app.kubernetes.io/managed-by: k3s-turing-pi
+    app.kubernetes.io/managed-by: jihwija
   annotations:
-    k3s-turing-pi.io/username: ${USERNAME}
+    jihwija.io/username: ${USERNAME}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -18,9 +18,9 @@ metadata:
   labels:
     app.kubernetes.io/name: argo-workflow-runner
     app.kubernetes.io/instance: ${NAMESPACE}
-    app.kubernetes.io/managed-by: k3s-turing-pi
+    app.kubernetes.io/managed-by: jihwija
   annotations:
-    k3s-turing-pi.io/username: ${USERNAME}
+    jihwija.io/username: ${USERNAME}
 rules:
   - apiGroups:
       - argoproj.io
@@ -46,9 +46,9 @@ metadata:
   labels:
     app.kubernetes.io/name: argo-workflow-runner
     app.kubernetes.io/instance: ${NAMESPACE}
-    app.kubernetes.io/managed-by: k3s-turing-pi
+    app.kubernetes.io/managed-by: jihwija
   annotations:
-    k3s-turing-pi.io/username: ${USERNAME}
+    jihwija.io/username: ${USERNAME}
 subjects:
   - kind: ServiceAccount
     name: argo-workflow-runner
@@ -66,9 +66,9 @@ metadata:
   labels:
     app.kubernetes.io/name: argo-workflow-runner
     app.kubernetes.io/instance: ${NAMESPACE}
-    app.kubernetes.io/managed-by: k3s-turing-pi
+    app.kubernetes.io/managed-by: jihwija
   annotations:
-    k3s-turing-pi.io/username: ${USERNAME}
+    jihwija.io/username: ${USERNAME}
 subjects:
   - kind: ServiceAccount
     name: argo-workflow-runner
@@ -84,7 +84,7 @@ metadata:
   name: argo-workflow-template-reader
   labels:
     app.kubernetes.io/name: argo-workflow-template-reader
-    app.kubernetes.io/managed-by: k3s-turing-pi
+    app.kubernetes.io/managed-by: jihwija
 rules:
   - apiGroups:
       - argoproj.io
@@ -100,9 +100,9 @@ metadata:
   labels:
     app.kubernetes.io/name: argo-workflow-template-reader
     app.kubernetes.io/instance: ${NAMESPACE}
-    app.kubernetes.io/managed-by: k3s-turing-pi
+    app.kubernetes.io/managed-by: jihwija
   annotations:
-    k3s-turing-pi.io/username: ${USERNAME}
+    jihwija.io/username: ${USERNAME}
 subjects:
   - kind: ServiceAccount
     name: ${USERNAME}-user

@@ -7,7 +7,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from platform_common import (
+from lib.platform_common import (
     die,
     docker_socket,
     ensure_rootless_docker_apparmor,
@@ -24,7 +24,7 @@ from platform_common import (
 
 SUBID_COUNT = 65536
 MARKER = get_marker("Docker Rootless")
-COMPOSE_MANAGED_MARKER = ".docker-compose-managed-by-k3s-turing-pi"
+COMPOSE_MANAGED_MARKER = ".docker-compose-managed-by-jihwija"
 
 
 def compose_architecture() -> str:

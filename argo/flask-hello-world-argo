@@ -4,7 +4,7 @@ metadata:
   name: flask-hello-world
   labels:
     app.kubernetes.io/name: flask-hello-world
-    app.kubernetes.io/managed-by: k3s-turing-pi
+    app.kubernetes.io/managed-by: jihwija
 spec:
   entrypoint: run
   onExit: remove-service
@@ -60,7 +60,7 @@ spec:
             labels:
               app.kubernetes.io/name: flask-hello-world
               app.kubernetes.io/instance: "{{workflow.name}}"
-              app.kubernetes.io/managed-by: k3s-turing-pi
+              app.kubernetes.io/managed-by: jihwija
           spec:
             type: NodePort
             selector:

@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import subprocess
+
+from lib.jihwija_common import (
+    INVENTORY_PATH,
+    JihwijaError,
+    kubectl,
+    print_bak,
+    require_root,
+    run_ansible_playbook,
+    run_plumbing,
+)
+
+
+def main() -> None:
+    argparse.ArgumentParser(description="Install or reconcile K3s with Ansible.").parse_args()
+    require_root()
+    if not INVENTORY_PATH.exists():
+        raise SystemExit("ERROR: run `jihwija init INVENTORY` first.")
+    try:
+        run_ansible_playbook("setup-k3s.yml")
+        # GPU discovery is provided by the NVIDIA device plugin.  Installing it
+        # here lets the taint reconciler identify GPU nodes during the initial
+        # K3s installation instead of waiting for the service deployment.
+        run_plumbing("deploy-services", "--service", "nvidia", "--timeout", "10m")
+        print("\nK3s nodes")
+        kubectl("get", "nodes", "-o", "wide")
+        print()
+        print_bak()
+    except (JihwijaError, subprocess.CalledProcessError) as exc:
+        raise SystemExit(f"ERROR: K3s installation failed: {exc}") from exc
+
+
+if __name__ == "__main__":
+    main()

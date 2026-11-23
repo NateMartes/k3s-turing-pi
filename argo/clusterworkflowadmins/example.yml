@@ -5,7 +5,7 @@ metadata:
   name: argo-cluster-workflow-template-admin
   labels:
     app.kubernetes.io/name: argo-cluster-workflow-template-admin
-    app.kubernetes.io/managed-by: k3s-turing-pi
+    app.kubernetes.io/managed-by: jihwija
 rules:
   - apiGroups:
       - argoproj.io
@@ -27,9 +27,9 @@ metadata:
   labels:
     app.kubernetes.io/name: argo-cluster-workflow-template-admin
     app.kubernetes.io/instance: USERNAME-namespace
-    app.kubernetes.io/managed-by: k3s-turing-pi
+    app.kubernetes.io/managed-by: jihwija
   annotations:
-    k3s-turing-pi.io/username: USERNAME
+    jihwija.io/username: USERNAME
 subjects:
   - kind: ServiceAccount
     name: USERNAME-user

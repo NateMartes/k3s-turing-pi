@@ -3,11 +3,13 @@ a RK1...
 Follow this gist instead to install everything you need:
 https://gist.github.com/NateMartes/7f7eeda60f5954b3d05569183124f839
 
-You will have to do this after you have set up your Jetson, and changed the hostname too:
+After setting up the Jetson and changing its hostname, grant passwordless sudo
+to the same SSH operator selected during `jihwija init`:
 
 ```bash
-echo 'sysadmin ALL=(ALL:ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/sysadmin >/dev/null \
-  && sudo chmod 440 /etc/sudoers.d/sysadmin
+ssh_user='replace-with-ssh-user'
+echo "$ssh_user ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee "/etc/sudoers.d/$ssh_user" >/dev/null \
+  && sudo chmod 440 "/etc/sudoers.d/$ssh_user"
 ```
 
 If you don't have internet, here is a Github gist, as of 11/4/2026. See the link above for the latest version:

@@ -3,7 +3,7 @@ import argparse
 import os
 from pathlib import Path
 
-from platform_common import current_username, get_user, home_path, require_root, run, get_marker, determine_username
+from lib.platform_common import current_username, get_user, home_path, require_root, run, get_marker, determine_username
 
 MARKER = get_marker("K3s Namespace")
 

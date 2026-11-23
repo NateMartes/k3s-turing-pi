@@ -5,7 +5,7 @@ import os
 import shutil
 from pathlib import Path
 
-from platform_common import (
+from lib.platform_common import (
     cleanup_rootless_docker_apparmor,
     die,
     get_marker,
@@ -19,7 +19,7 @@ from platform_common import (
 
 
 MARKER = get_marker("Docker Rootless")
-COMPOSE_MANAGED_MARKER = ".docker-compose-managed-by-k3s-turing-pi"
+COMPOSE_MANAGED_MARKER = ".docker-compose-managed-by-jihwija"
 
 
 def determine_username(argument: str | None) -> str:

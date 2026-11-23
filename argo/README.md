@@ -19,10 +19,10 @@ admission policy before treating user namespaces as a security boundary.
 
 ## System installation
 
-Argo Workflows is a first-class sysadmin service. The K3s Helm controller
+Argo Workflows is a first-class Jihwija service. The K3s Helm controller
 installs the pinned `argo-workflows` chart from
-[`sysadmin-services/argo-workflows.yaml`](../sysadmin-services/argo-workflows.yaml)
-into `sysadmin-system` together with its Traefik Ingress and TLS certificate.
+[`jihwija-services/argo-workflows.yaml`](../jihwija-services/argo-workflows.yaml)
+into `jihwija-system` together with its Traefik Ingress and TLS certificate.
 The chart is configured as a cluster-scoped installation so its controller can
 process Workflows in every user namespace. It must not be changed to
 `singleNamespace` mode.
@@ -33,13 +33,11 @@ at the Ingress before forwarding traffic to the cluster-only Argo Server
 Service. Client authentication requires Kubernetes 1.28 or newer. See the
 official [Argo Server authentication documentation](https://argo-workflows.readthedocs.io/en/latest/argo-server-auth-mode/).
 
-Configure `ARGO_HOSTNAME` in `etc/sysadmin-env`, install the configuration, and
-deploy the complete sysadmin-services bundle:
+Configure the Argo hostname and deploy the complete Jihwija service bundle:
 
 ```bash
-sudo install -D -o root -g root -m 600 \
-  ./etc/sysadmin-env /etc/k3s-turing-pi/sysadmin-env
-sudo ./scripts/apply-sysadmin-services
+sudo jihwija set hostname argo argo.example.test
+sudo jihwija deploy
 ```
 
 Verify the Helm release, controller, server, client authentication, and
@@ -49,13 +47,13 @@ Ingress:
 sudo k3s kubectl get helmchart argo-workflows --namespace kube-system
 sudo k3s kubectl rollout status \
   deployment/argo-workflows-workflow-controller \
-  --namespace sysadmin-system
+  --namespace jihwija-system
 sudo k3s kubectl rollout status deployment/argo-workflows-server \
-  --namespace sysadmin-system
+  --namespace jihwija-system
 sudo k3s kubectl logs deployment/argo-workflows-server \
-  --namespace sysadmin-system \
+  --namespace jihwija-system \
   --tail 100 | grep 'authModes="\[client\]"'
-sudo k3s kubectl get ingress,certificate --namespace sysadmin-system
+sudo k3s kubectl get ingress,certificate --namespace jihwija-system
 ```
 
 The managed CLI profile sets `ARGO_INSECURE_SKIP_VERIFY=true`, so Argo CLI
@@ -70,7 +68,7 @@ avoids requiring the Ingress route to support end-to-end gRPC over h2c.
 ### Migrating the old installation
 
 If Argo was previously installed from the upstream release manifest, delete
-its old namespace before applying the sysadmin-services bundle:
+its old namespace before applying the jihwija-services bundle:
 
 ```bash
 sudo k3s kubectl delete namespace argo --ignore-not-found
@@ -112,18 +110,19 @@ namespace installer:
 sudo ./scripts/plumbing-scripts/install-k3s-namespace --username bob
 ```
 
-The namespace installer also creates the user's `~/.kube/config`. Before
-creating users, install the repository's system-wide profiles once so `kubectl`
+The namespace installer also creates the user's `~/.kube/config`. The Jihwija
+installer and `set hostname argo` install the system-wide profiles so `kubectl`
 selects that namespace-scoped config and the Argo CLI selects the cluster's
-Argo Server on login:
+Argo Server on login. For manual source operation, render the hostname
+placeholder before copying the Argo profile:
 
 ```bash
 sudo install -D -o root -g root -m 644 \
-  ./etc/profile.d/k3s-turing-pi-kubeconfig.sh \
-  /etc/profile.d/k3s-turing-pi-kubeconfig.sh
+  ./etc/profile.d/jihwija-kubeconfig.sh \
+  /etc/profile.d/jihwija-kubeconfig.sh
 sudo install -D -o root -g root -m 644 \
-  ./etc/profile.d/k3s-turing-pi-argo-variables.sh \
-  /etc/profile.d/k3s-turing-pi-argo-variables.sh
+  ./etc/profile.d/jihwija-argo-variables.sh \
+  /etc/profile.d/jihwija-argo-variables.sh
 ```
 
 ### Deploy the workflow runner
@@ -150,9 +149,9 @@ grants `get` access to cluster workflow templates; it cannot create, update, or
 delete them. The shared ClusterRole remains when one user's runner is removed
 because other users may still depend on it.
 
-The resources use `app.kubernetes.io/managed-by: k3s-turing-pi` to identify
+The resources use `app.kubernetes.io/managed-by: jihwija` to identify
 this repository's user-management tooling as their manager, and carry the
-managed Linux username in the `k3s-turing-pi.io/username` annotation.
+managed Linux username in the `jihwija.io/username` annotation.
 
 The fixed name is intentional. Service accounts in different namespaces are
 different Kubernetes identities, so `bob-namespace/argo-workflow-runner` and

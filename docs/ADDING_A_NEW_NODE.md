@@ -62,7 +62,7 @@
 
    You should see something like:
    ```bash
-   USB Host  --> USB Device 
+   USB Host  --> USB Device
    bmc     -->   node 1
    ```
 
@@ -114,19 +114,21 @@
 
     Depending on your OS, it might be `ubuntu:ubuntu`.
 
-15. Make the `sysadmin` user:
+15. Create or select the SSH operator account that Jihwija will use. It may
+    have any valid Linux username, but it must have passwordless sudo access:
 
     ```bash
-    sudo useradd -m -s /bin/bash sysadmin \
-      && echo 'sysadmin:<password>' | sudo chpasswd \
-      && sudo usermod -aG sudo sysadmin \
-      && echo 'sysadmin ALL=(ALL:ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/sysadmin >/dev/null \
-      && sudo chmod 440 /etc/sudoers.d/sysadmin
+    ssh_user='replace-with-ssh-user'
+    sudo useradd -m -s /bin/bash "$ssh_user" \
+      && sudo passwd "$ssh_user" \
+      && sudo usermod -aG sudo "$ssh_user" \
+      && echo "$ssh_user ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee "/etc/sudoers.d/$ssh_user" >/dev/null \
+      && sudo chmod 440 "/etc/sudoers.d/$ssh_user"
     ```
 
     It's probably a good idea to keep the passwords the same.
 
-16. Sign out of the current user and log in as `sysadmin`.
+16. Sign out of the current user and log in as the chosen SSH operator.
 
 17. Remove the original user:
 
@@ -149,5 +151,5 @@ That's it! Now you can either start with this node as the first or go on an alre
 and copy your SSH key to this system:
 
 ```bash
-ssh-copy-id sysadmin@<node-ip>
+ssh-copy-id Jihwija@<node-ip>
 ```

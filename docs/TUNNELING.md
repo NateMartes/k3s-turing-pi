@@ -14,7 +14,7 @@ You need:
 
 - SSH access to a host that can reach the cluster network.
 - An OpenSSH client on your computer.
-- The service hostnames from `etc/sysadmin-env`.
+- The service hostnames from `etc/jihwija.env`.
 - A browser that supports a SOCKS5 proxy.
 
 The SSH host does not have to run the web services. It only needs network
@@ -36,7 +36,7 @@ Replace `<ssh-host>` with the address of a reachable cluster host. The command
 does not open a remote shell. It remains active while the tunnel is active.
 Keep this terminal open. Press `Ctrl+C` when you want to close the tunnel.
 
-You ought to probably tunnnel into your controller node, like your sysadmin
+You ought to probably tunnnel into your controller node, like your Jihwija
 service node.
 
 ## 2. Configure a browser
@@ -56,7 +56,7 @@ connect to a private cluster address directly.
 1. Open **Settings**.
 3. Select **Privacy and security**.
 4. Select **Advanced settings** after **Connection and software security**
-5. Select **Configure proxy** under **Proxy settings** 
+5. Select **Configure proxy** under **Proxy settings**
 4. Select **Manual proxy configuration**.
 5. Set **SOCKS Host** to `127.0.0.1` and **Port** to `1080`.
 6. Select **SOCKS v5**.
@@ -88,7 +88,7 @@ Open each service with its configured hostname:
 - Rancher: `https://<RANCHER_HOSTNAME>`
 - Argo Workflows: `https://<ARGO_HOSTNAME>`
 
-Get the actual values from `etc/sysadmin-env`. Keep the `https://` scheme and
+Get the actual values from `etc/jihwija.env`. Keep the `https://` scheme and
 do not replace the service hostname with `localhost`. The ingress uses the
 hostname to select a service and its TLS certificate.
 
@@ -97,7 +97,7 @@ hostname to select a service and its TLS certificate.
 The SSH tunnel encrypts traffic between your computer and the SSH host. It does
 not add the cluster's private certificate authorities to your browser.
 
-The repository's `scripts/trust-k3s-crets` command installs those authorities
+The `sudo jihwija trust certs` command (or underlying `scripts/plumbing-scripts/trust-k3s-certs`) installs those authorities
 on the computer where you run the command. If you use the tunnel from a
 different computer, install the same private authorities on that computer
 before you enter credentials. Do not ignore a certificate warning unless you

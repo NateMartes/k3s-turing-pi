@@ -1,0 +1,420 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import pwd
+import shutil
+from pathlib import Path
+import subprocess
+import time
+
+from lib.user_common import (
+    DEFAULT_HARBOR_HOST, DEFAULT_PORTAINER_HOST, DEFAULT_RANCHER_HOST,
+    SELECTABLE_SERVICES,
+    home_for, load_state,
+    parse_services,
+    remove_state, require_root, run, run_plumbing, save_state, state_path,
+    user_exists,
+    validate_username, DEFAULT_HARBOR_ADMIN_PASSWORD, DEFAULT_PORTAINER_API_KEY,
+    DEFAULT_RANCHER_API_KEY, require_hostname, print_unverified_https_notice,
+)
+
+def yes(prompt: str) -> bool:
+    return input(prompt).strip().lower() in {"y", "yes"}
+
+def main():
+    p = argparse.ArgumentParser(description="Remove a user's platform resources and Linux account.")
+    p.add_argument("username_arg", nargs="?", metavar="USERNAME")
+    p.add_argument("-u", "--username")
+    p.add_argument(
+        "-o", "--only",
+        type=parse_services,
+        default=None,
+        metavar="SERVICE,...",
+        help=(
+            "Remove resources only for these comma-separated services/features. "
+            "Available: "
+            + ", ".join(SELECTABLE_SERVICES)
+            + ". Omit this option to select all services."
+        ),
+    )
+    p.add_argument("--purge-data", action=argparse.BooleanOptionalAction, default=None,
+                   help="Delete the user's home directory and rootless Docker data as well.")
+    p.add_argument("--yes", action="store_true", help="Skip confirmation.")
+    p.add_argument(
+        "--raw-logs", action="store_true",
+        help="Stream all plumbing command output instead of using compact status lines.",
+    )
+    args = p.parse_args()
+    if args.username and args.username_arg and args.username != args.username_arg:
+        p.error("USERNAME and --username disagree")
+    args.username = args.username or args.username_arg or input("Username: ").strip()
+    if not args.username:
+        p.error("a username is required")
+    if args.only is None:
+        selected = input(
+            "Components to remove [all] (comma-separated): "
+        ).strip()
+        args.only = (
+            frozenset(SELECTABLE_SERVICES)
+            if not selected or selected.lower() == "all"
+            else parse_services(selected)
+        )
+    if args.purge_data is None:
+        args.purge_data = yes("Delete the managed user's home and Docker data? [y/N] ")
+
+    require_root()
+    username = validate_username(args.username)
+    state = load_state(username)
+
+    service_for_flag = {
+        "docker_rootless": "docker-rootless",
+        "portainer_agent": "portainer-agent",
+        "k3s_namespace": "k3s-namespace",
+        "argo_workflow_runner": "argo-workflow-runner",
+        "harbor_account": "harbor",
+        "rancher_account": "rancher",
+        "portainer_account": "portainer",
+    }
+    if "services" in state:
+        created_services = set(state["services"])
+    else:
+        # Backward compatibility for state created by the earlier --exclude API.
+        created_services = set(SELECTABLE_SERVICES) - set(state.get("excluded", []))
+    requested_services = set(args.only)
+    services_to_remove = created_services & requested_services
+    linux_user_created = state.get("linux_user_created", True)
+
+    # Included services are cleaned up even when provisioning failed before their
+    # completion flag was saved, because a lower-level installer may have made
+    # partial changes. Older state files did not record exclusions, so all of
+    # their services remain eligible for cleanup.
+    def should_remove(key: str) -> bool:
+        return service_for_flag[key] in services_to_remove
+
+    def skip_reason(key: str) -> str:
+        service = service_for_flag[key]
+        if service not in created_services:
+            return "not created"
+        return "not selected by --only"
+
+    def resource_display(key: str, value) -> str:
+        service = service_for_flag[key]
+        if service not in created_services:
+            return "not created"
+        if service not in services_to_remove:
+            return f"{value} (not selected for removal)"
+        return str(value)
+
+    home = state.get("home")
+    if not home and user_exists(username):
+        home = str(home_for(username))
+
+    rancher_host = None
+    harbor_host = None
+    portainer_host = None
+    https_services = []
+    if should_remove("rancher_account"):
+        rancher_host = require_hostname(
+            state.get("rancher_host") or DEFAULT_RANCHER_HOST,
+            "RANCHER_HOSTNAME",
+            "a rancher_host value in the user's state file",
+        )
+        https_services.append(("Rancher", rancher_host))
+    if should_remove("harbor_account"):
+        harbor_host = require_hostname(
+            state.get("harbor_host") or DEFAULT_HARBOR_HOST,
+            "HARBOR_HOSTNAME",
+            "a harbor_host value in the user's state file",
+        )
+        https_services.append(("Harbor", harbor_host))
+    if should_remove("portainer_account"):
+        portainer_host = require_hostname(
+            state.get("portainer_host") or DEFAULT_PORTAINER_HOST,
+            "PORTAINER_HOSTNAME",
+            "a portainer_host value in the user's state file",
+        )
+        https_services.append(("Portainer", portainer_host))
+    print_unverified_https_notice(https_services)
+    cluster_id = state.get("cluster_id") or os.environ.get("RANCHER_CLUSTER_ID")
+    agent_port = state.get("agent_port", "?")
+
+    print(f"Resources associated with {username}")
+    print("--------------------------------")
+    linux_account_status = "present" if user_exists(username) else "not found"
+    if not linux_user_created:
+        linux_account_status += " (pre-existing; preserve)"
+    print(f"Linux account:          {linux_account_status}")
+    print(f"Home directory:         {home or 'unknown'}")
+    delete_home = args.purge_data and linux_user_created
+    print(f"Home data action:       {'DELETE' if delete_home else 'PRESERVE'}")
+    print(f"Removal selection:      {', '.join(sorted(requested_services))}")
+    print(
+        "Rootless Docker:        "
+        + resource_display(
+            "docker_rootless", state.get("docker_rootless", "unknown")
+        )
+    )
+    print(
+        "Portainer Agent:        "
+        + resource_display(
+            "portainer_agent",
+            f"{state.get('portainer_agent', 'unknown')} (port {agent_port})",
+        )
+    )
+    print(
+        "K3s namespace:          "
+        + resource_display(
+            "k3s_namespace",
+            state.get("namespace", username + "-namespace"),
+        )
+    )
+    print(
+        "Argo workflow runner:   "
+        + resource_display(
+            "argo_workflow_runner",
+            state.get("argo_workflow_runner", "unknown"),
+        )
+    )
+    print(
+        "Rancher user/project:   "
+        + resource_display(
+            "rancher_account",
+            f"{username} / {state.get('rancher_project', username + '-project')}",
+        )
+    )
+    print(
+        "Harbor user/project:    "
+        + resource_display(
+            "harbor_account",
+            f"{username} / {state.get('harbor_project', username + '-namespace')}",
+        )
+    )
+    print(
+        "Portainer user/env:     "
+        + resource_display(
+            "portainer_account",
+            f"{username} / {state.get('portainer_environment', username + '-docker')}",
+        )
+    )
+    print(f"State file:             {state_path(username)}")
+
+    if not args.yes and not yes(f"\nRemove these resources for {username}? [y/N] "):
+        print("Cancelled.")
+        return
+
+    removed_services = set()
+    failures = []
+    flag_for_service = {service: flag for flag, service in service_for_flag.items()}
+
+    def record_removal(service: str, result: subprocess.CompletedProcess) -> None:
+        if result.returncode != 0:
+            failures.append(service)
+            return
+        removed_services.add(service)
+        state[flag_for_service[service]] = False
+        state["services"] = sorted(created_services - removed_services)
+        state.pop("excluded", None)
+        state["linux_user"] = user_exists(username)
+        # Save after every successful stage so interruption and partial failure
+        # leave an accurate, resumable desired state.
+        save_state(username, state)
+
+    # Reverse provisioning order.
+    if should_remove("portainer_account"):
+        print("\n[1/7] Removing Portainer account/environment")
+        pa = ["-u", username, "-H", portainer_host]
+        record_removal(
+            "portainer",
+            run_plumbing("uninstall-portainer-account", pa, check=False, extra_env={
+                    "PORTAINER_API_KEY": DEFAULT_PORTAINER_API_KEY
+                }, raw_logs=args.raw_logs, label="Removing Portainer account and environment"
+            ),
+        )
+    else:
+        print(
+            "\n[1/7] Skipping Portainer account/environment "
+            f"({skip_reason('portainer_account')})"
+        )
+
+    if should_remove("rancher_account"):
+        print("\n[2/7] Removing Rancher project/account")
+        ra = ["-u", username, "-H", rancher_host]
+        if cluster_id:
+            ra += ["--cluster-id", cluster_id]
+        record_removal(
+            "rancher",
+            run_plumbing("uninstall-rancher-account", ra, check=False, extra_env={
+                    "RANCHER_TOKEN": DEFAULT_RANCHER_API_KEY
+                }, raw_logs=args.raw_logs, label="Removing Rancher account and project"
+            ),
+        )
+    else:
+        print(
+            "\n[2/7] Skipping Rancher project/account "
+            f"({skip_reason('rancher_account')})"
+        )
+
+    if should_remove("harbor_account"):
+        print("\n[3/7] Removing Harbor project/account")
+        record_removal(
+            "harbor",
+            run_plumbing(
+                "uninstall-harbor-account",
+                ["-u", username, "-H", harbor_host],
+                check=False,
+                extra_env=(
+                    {"HARBOR_ADMIN_PASSWORD": DEFAULT_HARBOR_ADMIN_PASSWORD}
+                    if DEFAULT_HARBOR_ADMIN_PASSWORD
+                    else None
+                ),
+                raw_logs=args.raw_logs,
+                label="Removing Harbor account and project",
+            ),
+        )
+    else:
+        print(
+            "\n[3/7] Skipping Harbor project/account "
+            f"({skip_reason('harbor_account')})"
+        )
+
+    if should_remove("argo_workflow_runner"):
+        print("\n[4/7] Removing Argo workflow runner")
+        record_removal(
+            "argo-workflow-runner",
+            run_plumbing(
+                "uninstall-argo-workflow-runner",
+                ["-u", username, "-n", state.get("namespace", username + "-namespace")],
+                check=False,
+                raw_logs=args.raw_logs,
+                label="Removing Argo workflow runner",
+            ),
+        )
+    else:
+        print(
+            "\n[4/7] Skipping Argo workflow runner "
+            f"({skip_reason('argo_workflow_runner')})"
+        )
+
+    if should_remove("k3s_namespace"):
+        print("\n[5/7] Removing K3s namespace")
+        record_removal(
+            "k3s-namespace",
+            run_plumbing(
+                "uninstall-k3s-namespace", ["-u", username], check=False,
+                raw_logs=args.raw_logs, label="Removing K3s namespace",
+            ),
+        )
+    else:
+        print(
+            "\n[5/7] Skipping K3s namespace "
+            f"({skip_reason('k3s_namespace')})"
+        )
+
+    if should_remove("portainer_agent"):
+        print("\n[6/7] Removing Portainer Agent")
+        record_removal(
+            "portainer-agent",
+            run_plumbing("uninstall-portainer-agent", ["-u", username], check=False, extra_env={
+                    "PORTAINER_API_KEY": DEFAULT_PORTAINER_API_KEY
+                }, raw_logs=args.raw_logs, label="Removing Portainer Agent"
+            ),
+        )
+    else:
+        print(
+            "\n[6/7] Skipping Portainer Agent "
+            f"({skip_reason('portainer_agent')})"
+        )
+
+    if should_remove("docker_rootless"):
+        print("\n[7/7] Removing rootless Docker")
+        docker_args = ["-u", username]
+        if args.purge_data:
+            docker_args.append("--purge-data")
+        record_removal(
+            "docker-rootless",
+            run_plumbing(
+                "uninstall-docker-rootless", docker_args, check=False,
+                raw_logs=args.raw_logs, label="Removing rootless Docker",
+            ),
+        )
+    else:
+        print(
+            "\n[7/7] Skipping rootless Docker "
+            f"({skip_reason('docker_rootless')})"
+        )
+
+    remaining_services = created_services - removed_services
+    if failures:
+        state["services"] = sorted(remaining_services)
+        state["linux_user"] = user_exists(username)
+        save_state(username, state)
+        print("\nRemoval is incomplete; state was retained for a safe retry.")
+        print(f"Failed components: {', '.join(failures)}")
+        raise SystemExit(1)
+
+    if remaining_services:
+        state["services"] = sorted(remaining_services)
+        state["linux_user"] = user_exists(username)
+        save_state(username, state)
+        print(f"\nRemoved selected platform resources for {username}.")
+        print(f"Removal selection: {', '.join(sorted(requested_services))}.")
+        print(f"State retained for remaining services at {state_path(username)}.")
+        return
+
+    if user_exists(username) and linux_user_created:
+        print("\nRemoving Linux account...")
+
+        print("\nTerminating user processes...")
+
+        run(
+            ["loginctl", "terminate-user", username],
+            check=False,
+        )
+
+        for _ in range(20):
+            result = subprocess.run(
+                ["pgrep", "-u", username],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False
+            )
+            if result.returncode != 0:
+                break
+            time.sleep(0.25)
+
+        cmd = ["userdel"]
+        if args.purge_data:
+            cmd.append("--remove")
+        cmd.append(username)
+        result = run(cmd, check=False)
+        if result.returncode != 0:
+            state["services"] = []
+            state["linux_user"] = True
+            save_state(username, state)
+            print("\nLinux account removal failed; state was retained for a safe retry.")
+            raise SystemExit(1)
+    elif user_exists(username):
+        print(f"\nPreserving pre-existing Linux account {username}.")
+
+    if delete_home and home and Path(home).exists():
+        # userdel -r may leave a home behind if it is on an unusual mount.
+        try:
+            shutil.rmtree(home)
+        except OSError as exc:
+            state["services"] = []
+            state["linux_user"] = user_exists(username)
+            save_state(username, state)
+            print(f"\nHome removal failed; state was retained for a safe retry: {exc}")
+            raise SystemExit(1) from exc
+
+    remove_state(username)
+
+    print(f"\nRemoved selected platform resources for {username}.")
+    print(f"Removal selection: {', '.join(sorted(requested_services))}.")
+    if not delete_home and home:
+        print(f"Home data was preserved at {home}.")
+        if linux_user_created:
+            print("Use --purge-data if you intend to delete user-owned local data.")
+
+if __name__ == "__main__":
+    main()

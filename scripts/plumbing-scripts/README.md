@@ -1,6 +1,12 @@
 # Plumbing Scripts
 
-These are lower-level commands used by the main user-management scripts.
+This directory is the complete operational layer used by the `jihwija` CLI.
+Every cluster, node, service, and user operation remains directly executable
+here for maintainers. The friendly CLI routes arguments to these scripts
+without reimplementing their behavior.
+
+Shared Python modules live in `lib/`; the plumbing root intentionally contains
+only directly executable commands, requirements, and this documentation.
 
 Passwords for Rancher/Portainer creation and updates may be supplied through
 `USER_PASSWORD` so orchestration does not expose the user's password in process
@@ -47,16 +53,18 @@ The main `create-user` and `remove-user` commands call these automatically.
 
 ## User kubeconfig selection
 
-Before running `create-user` for the first time, install the repository's
-system-wide profile scripts:
+The Jihwija installer installs the kubeconfig profile. `set-hostname argo`
+renders and installs the Argo profile with the configured endpoint. Maintainers
+performing a manual source-tree setup can install them after replacing the
+`@ARGO_HOSTNAME@` placeholder:
 
 ```bash
 sudo install -D -o root -g root -m 644 \
-  ../../etc/profile.d/k3s-turing-pi-kubeconfig.sh \
-  /etc/profile.d/k3s-turing-pi-kubeconfig.sh
+  ../../etc/profile.d/jihwija-kubeconfig.sh \
+  /etc/profile.d/jihwija-kubeconfig.sh
 sudo install -D -o root -g root -m 644 \
-  ../../etc/profile.d/k3s-turing-pi-argo-variables.sh \
-  /etc/profile.d/k3s-turing-pi-argo-variables.sh
+  ../../etc/profile.d/jihwija-argo-variables.sh \
+  /etc/profile.d/jihwija-argo-variables.sh
 ```
 
 For users with a readable `~/.kube/config`, login shells then set `KUBECONFIG`

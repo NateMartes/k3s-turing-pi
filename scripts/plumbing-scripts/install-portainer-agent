@@ -2,7 +2,7 @@
 import argparse
 from pathlib import Path
 
-from platform_common import (
+from lib.platform_common import (
     DEFAULT_PORTAINER_HOST, current_username, docker_cmd, docker_socket, get_user,
     home_path, info, require_root_for_other_user, run_as_target_user,
     require_hostname,

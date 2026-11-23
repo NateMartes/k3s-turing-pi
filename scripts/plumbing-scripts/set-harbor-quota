@@ -3,7 +3,7 @@ import argparse
 import os
 from urllib.parse import quote, urlencode
 
-from platform_common import (
+from lib.platform_common import (
     DEFAULT_HARBOR_HOST, current_username, harbor_headers, normalize_url,
     request_json, require_hostname, require_root, secure_prompt,
 )

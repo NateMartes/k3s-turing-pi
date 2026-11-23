@@ -1,7 +1,7 @@
 ---
 # Install K3s in a cluster
 # Note: ensure that exactly one node has k3s_host=true and at least one node
-# has is_sysadmin_service_node=true inside inventory.yml.
+# has is_jihwija_service_node=true inside inventory.yml.
 
 - name: Classify K3s nodes
   hosts: all
@@ -72,10 +72,10 @@
       ansible.builtin.group_by:
         key: "k3s_{{ 'server' if (k3s_host | default(false) | bool) else 'agent' }}"
 
-    - name: Add selected node to the sysadmin service group
+    - name: Add selected node to the Jihwija service group
       ansible.builtin.group_by:
-        key: k3s_sysadmin_service
-      when: is_sysadmin_service_node | default(false) | bool
+        key: k3s_jihwija_service
+      when: is_jihwija_service_node | default(false) | bool
 
     - name: Ensure exactly one K3s server exists
       ansible.builtin.assert:
@@ -87,15 +87,15 @@
           K3s server: {{ groups['k3s_server'][0] }}
       run_once: true
 
-    - name: Ensure at least one sysadmin service node exists
+    - name: Ensure at least one Jihwija service node exists
       ansible.builtin.assert:
         that:
-          - groups.get('k3s_sysadmin_service', []) | length > 0
+          - groups.get('k3s_jihwija_service', []) | length > 0
         fail_msg: >-
-          At least one node must have is_sysadmin_service_node: true.
+          At least one node must have is_jihwija_service_node: true.
         success_msg: >-
-          Sysadmin service nodes:
-          {{ groups['k3s_sysadmin_service'] | join(', ') }}
+          Jihwija service nodes:
+          {{ groups['k3s_jihwija_service'] | join(', ') }}
       run_once: true
 
     - name: Validate the K3s DNS resolver configuration
@@ -392,19 +392,19 @@
       loop: "{{ k3s_play_nodes }}"
       changed_when: false
 
-    - name: Read the current sysadmin service nodes
+    - name: Read the current Jihwija service nodes
       ansible.builtin.command:
         argv:
           - /usr/local/bin/k3s
           - kubectl
           - get
           - nodes
-          - --selector=sysadmin-services=true
+          - --selector=jihwija-services=true
           - --output=jsonpath={range .items[*]}{.metadata.name}{"\n"}{end}
-      register: current_sysadmin_service_nodes
+      register: current_jihwija_service_nodes
       changed_when: false
 
-    - name: Label selected sysadmin service nodes
+    - name: Label selected Jihwija service nodes
       ansible.builtin.command:
         argv:
           - /usr/local/bin/k3s
@@ -412,14 +412,14 @@
           - label
           - node
           - "{{ item }}"
-          - sysadmin-services=true
+          - jihwija-services=true
           - --overwrite
       loop: >-
-        {{ groups['k3s_sysadmin_service'] |
-           difference(current_sysadmin_service_nodes.stdout_lines) }}
+        {{ groups['k3s_jihwija_service'] |
+           difference(current_jihwija_service_nodes.stdout_lines) }}
       changed_when: true
 
-    - name: Remove the label from unselected sysadmin service nodes
+    - name: Remove the label from unselected Jihwija service nodes
       ansible.builtin.command:
         argv:
           - /usr/local/bin/k3s
@@ -427,10 +427,10 @@
           - label
           - node
           - "{{ item }}"
-          - sysadmin-services-
+          - jihwija-services-
       loop: >-
-        {{ current_sysadmin_service_nodes.stdout_lines |
-           difference(groups['k3s_sysadmin_service']) }}
+        {{ current_jihwija_service_nodes.stdout_lines |
+           difference(groups['k3s_jihwija_service']) }}
       changed_when: true
 
     - name: Read node Pod CIDR assignments
