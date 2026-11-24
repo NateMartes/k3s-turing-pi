@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-trust-k3s-certs
+trust-k3s-certs.py
 
 Discover certificates used by K3s Ingress endpoints and install appropriate
 self-signed/private CA certificates into:

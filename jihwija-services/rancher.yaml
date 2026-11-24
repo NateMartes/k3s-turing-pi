@@ -16,7 +16,7 @@ spec:
   backOffLimit: 20
   valuesContent: |-
 
-    # Rendered by scripts/plumbing-scripts/deploy-services from jihwija.env.
+    # Rendered by scripts/plumbing-scripts/deploy-services.py from jihwija.env.
     hostname: ${RANCHER_HOSTNAME}
     bootstrapPassword: ${RANCHER_BOOTSTRAP_PASSWORD_JSON}
 

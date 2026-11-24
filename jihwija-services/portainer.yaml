@@ -34,11 +34,11 @@ spec:
       enabled: true
       ingressClassName: traefik
       tls:
-          # Rendered by scripts/plumbing-scripts/deploy-services from jihwija.env.
+          # Rendered by scripts/plumbing-scripts/deploy-services.py from jihwija.env.
         - hosts:
            - ${PORTAINER_HOSTNAME}
       hosts:
-          # Rendered by scripts/plumbing-scripts/deploy-services from jihwija.env.
+          # Rendered by scripts/plumbing-scripts/deploy-services.py from jihwija.env.
         - host: ${PORTAINER_HOSTNAME}
           paths:
             - path: "/"

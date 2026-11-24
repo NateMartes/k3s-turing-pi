@@ -1,3 +1,12 @@
+---
+title: JIHWIJA-TUNNELING
+section: 7
+header: Jihwija Manual
+footer: Jihwija 0.1.0
+man-name: jihwija-tunneling
+description: access Jihwija web services through an SSH tunnel
+---
+
 # Tunneling to the Web Services
 
 Use an SSH tunnel when your computer can reach an SSH host in the cluster but
@@ -97,7 +106,7 @@ hostname to select a service and its TLS certificate.
 The SSH tunnel encrypts traffic between your computer and the SSH host. It does
 not add the cluster's private certificate authorities to your browser.
 
-The `sudo jihwija trust certs` command (or underlying `scripts/plumbing-scripts/trust-k3s-certs`) installs those authorities
+The `sudo jihwija trust certs` command (or underlying `scripts/plumbing-scripts/trust-k3s-certs.py`) installs those authorities
 on the computer where you run the command. If you use the tunnel from a
 different computer, install the same private authorities on that computer
 before you enter credentials. Do not ignore a certificate warning unless you

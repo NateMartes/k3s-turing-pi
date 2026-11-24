@@ -11,7 +11,6 @@ from lib.platform_common import (
 def main():
     # Run this command as the administrator/root.
     # --username identifies the target account only; never switch to that user's UID.
-    require_root()
     p = argparse.ArgumentParser(
         description="Create a Portainer user, register that user's Agent environment, and grant access."
     )
@@ -27,6 +26,7 @@ def main():
     p.add_argument("--role-id", type=int, default=2,
                    help="Portainer environment access role ID. Default 2 = standard environment user in common setups.")
     args = p.parse_args()
+    require_root()
     args.hostname = require_hostname(args.hostname, "PORTAINER_HOSTNAME")
 
     api_key = args.api_key or secure_prompt("Portainer admin API key: ")

@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 from lib.platform_common import determine_username, die, require_root, run
+from lib.user_privileges import revoke_privilege
 
 
 def validate_namespace(namespace: str) -> str:
@@ -35,6 +36,9 @@ def main():
     username = determine_username(args.username)
     namespace = validate_namespace(args.namespace)
     runner = "argo-workflow-runner"
+
+    revoke_privilege(username, "argo-template-admin")
+    print("Removed the user's Argo template administrator binding, if present.")
 
     kubectl(
         [

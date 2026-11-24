@@ -4,6 +4,7 @@ __pycache__/
 .ansible/
 .env
 .venv/
+docs/build/
 *.bak
 scripts/state/
 etc/jihwija.env

@@ -25,7 +25,7 @@ def main() -> None:
         # GPU discovery is provided by the NVIDIA device plugin.  Installing it
         # here lets the taint reconciler identify GPU nodes during the initial
         # K3s installation instead of waiting for the service deployment.
-        run_plumbing("deploy-services", "--service", "nvidia", "--timeout", "10m")
+        run_plumbing("deploy-services.py", "--service", "nvidia", "--timeout", "10m")
         print("\nK3s nodes")
         kubectl("get", "nodes", "-o", "wide")
         print()

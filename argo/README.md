@@ -102,12 +102,12 @@ runner RBAC intact.
 ### Create the user's namespace
 
 The workflow runner is installed after the user's namespace exists. The main
-`create-user` command performs both steps automatically. When using the
+`create-user.py` command performs both steps automatically. When using the
 plumbing commands directly, create the namespace first or use the repository's
 namespace installer:
 
 ```bash
-sudo ./scripts/plumbing-scripts/install-k3s-namespace --username bob
+sudo ./scripts/plumbing-scripts/install-k3s-namespace.py --username bob
 ```
 
 The namespace installer also creates the user's `~/.kube/config`. The Jihwija
@@ -130,7 +130,7 @@ sudo install -D -o root -g root -m 644 \
 Pass both the Linux username and target namespace explicitly:
 
 ```bash
-sudo ./scripts/plumbing-scripts/install-argo-workflow-runner \
+sudo ./scripts/plumbing-scripts/install-argo-workflow-runner.py \
   --username bob \
   --namespace bob-namespace
 ```
@@ -163,7 +163,7 @@ The main user-management commands install and remove the runner automatically.
 To remove only the runner without deleting its namespace, run:
 
 ```bash
-sudo ./scripts/plumbing-scripts/uninstall-argo-workflow-runner \
+sudo ./scripts/plumbing-scripts/uninstall-argo-workflow-runner.py \
   --username bob \
   --namespace bob-namespace
 ```

@@ -1,3 +1,12 @@
+---
+title: JIHWIJA-ARGO-WORKFLOW
+section: 7
+header: Jihwija Manual
+footer: Jihwija 0.1.0
+man-name: jihwija-argo-workflow
+description: deploy and operate an Argo workflow on Jihwija
+---
+
 # Deploying an Argo Workflow
 
 This example installs a shared `ClusterWorkflowTemplate`, submits it into a
@@ -44,7 +53,7 @@ check fails, verify the Argo Ingress and certificate in `jihwija-system` as
 described in that setup.
 For users created before the current runner permissions were added, an
 administrator can rerun
-`scripts/plumbing-scripts/install-argo-workflow-runner` for that user.
+`scripts/plumbing-scripts/install-argo-workflow-runner.py` for that user.
 
 ### 2. Install the shared Flask workflow template
 

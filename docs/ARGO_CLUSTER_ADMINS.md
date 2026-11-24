@@ -1,24 +1,39 @@
+---
+title: JIHWIJA-ARGO-TEMPLATE-ADMIN
+section: 7
+header: Jihwija Manual
+footer: Jihwija 0.1.0
+man-name: jihwija-argo-template-admin
+description: manage elevated access to shared Argo workflow templates
+---
+
 # Argo Cluster Workflow Template Administrators
 
-Use [`example.yml`](../argo/clusterworkflowadmins/example.yml) to allow an existing system user to create,
-edit, and delete shared Argo `ClusterWorkflowTemplate` resources. The manifest
-grants access to the user's existing `<username>-user` service account in the
-`<username>-namespace` namespace.
+Use the Jihwija privilege commands to allow an existing managed user to create,
+edit, and delete shared Argo `ClusterWorkflowTemplate` resources. The
+`argo-template-admin` privilege grants access to the user's existing
+`<username>-user` service account in the `<username>-namespace` namespace.
 
 This is a cluster-wide permission. A user with this role can change or remove
 templates used by every namespace, so grant it only to trusted administrators.
 
 ## Grant access
 
-The user must already have been created with this repository's user-management
-scripts. Replace every occurrence of `USERNAME` in the example with the user's
-Linux username and apply the rendered manifest. For example, to grant access to
-`bob` without changing the checked-in example:
+The Linux user, managed Kubernetes namespace, and user service account must
+already exist. Grant access to `bob` with:
 
 ```bash
-sed 's/USERNAME/bob/g' argo/clusterworkflowadmins/example.yml \
-  | sudo k3s kubectl apply -f -
+sudo jihwija grant user bob argo-template-admin
 ```
+
+Maintainers can run the same operation directly through its plumbing command:
+
+```bash
+sudo ./scripts/plumbing-scripts/grant-user-privilege.py \
+  bob argo-template-admin
+```
+
+The operation is idempotent and can be rerun to reconcile the role and binding.
 
 The command creates or updates one shared
 `ClusterRole/argo-cluster-workflow-template-admin` and creates a user-specific
@@ -45,17 +60,29 @@ argo cluster-template delete my-cluster-template --argo-http1
 
 ## Revoke access
 
-Delete only the user's binding. For example, to revoke `bob`:
+Revoke access from `bob` with:
 
 ```bash
-sudo k3s kubectl delete clusterrolebinding \
-  bob-argo-cluster-workflow-template-admin
+sudo jihwija revoke user bob argo-template-admin
 ```
 
-Keep the shared `argo-cluster-workflow-template-admin` ClusterRole if any other
-administrator uses it. Removing the binding does not delete any existing
-`ClusterWorkflowTemplate` resources, and it does not remove the user's normal
-read-only template access installed by the user-management scripts.
+Or run the plumbing command directly:
+
+```bash
+sudo ./scripts/plumbing-scripts/revoke-user-privilege.py \
+  bob argo-template-admin
+```
+
+Revocation is idempotent and works even if the Linux user or namespace has
+already been removed. It deletes only the user's binding. The shared
+`argo-cluster-workflow-template-admin` ClusterRole remains for other
+administrators. Removing the binding does not delete existing
+`ClusterWorkflowTemplate` resources or the user's normal read-only template
+access.
+
+Uninstalling the user's Argo workflow runner also revokes this privilege. Final
+managed-user removal performs the same cleanup defensively and stops without
+deleting the Linux account if Kubernetes privilege cleanup fails.
 
 Confirm that the elevated permissions are gone:
 

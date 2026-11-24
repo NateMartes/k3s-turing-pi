@@ -253,7 +253,7 @@ def determine_username(argument: str | None) -> str:
 
     die(
         "A target username is required when running as root.\n"
-        "Example: install-docker-rootless -u bob"
+        "Example: install-docker-rootless.py -u bob"
     )
 
 def ensure_user_manager(username: str) -> None:

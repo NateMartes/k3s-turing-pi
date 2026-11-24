@@ -35,7 +35,7 @@ read-only access to shared cluster workflow templates after creating the
 user's K3s namespace:
 
 ```bash
-sudo ./install-argo-workflow-runner \
+sudo ./install-argo-workflow-runner.py \
   --username bob \
   --namespace bob-namespace
 ```
@@ -44,16 +44,37 @@ Remove the runner resources and the user's cluster template reader binding
 with:
 
 ```bash
-sudo ./uninstall-argo-workflow-runner \
+sudo ./uninstall-argo-workflow-runner.py \
   --username bob \
   --namespace bob-namespace
 ```
 
-The main `create-user` and `remove-user` commands call these automatically.
+The main `create-user.py` and `remove-user.py` commands call these automatically.
+
+## Managed user privileges
+
+Grant a managed user the allowlisted Argo shared-template administrator
+privilege with:
+
+```bash
+sudo ./grant-user-privilege.py bob argo-template-admin
+```
+
+Revoke it with:
+
+```bash
+sudo ./revoke-user-privilege.py bob argo-template-admin
+```
+
+Granting requires the managed Linux user, `<username>-namespace`, and
+`<username>-user` service account to exist. Revocation intentionally requires
+only a valid username so stale bindings can be removed after other user
+resources disappear. The corresponding CLI commands are `jihwija grant user`
+and `jihwija revoke user`.
 
 ## User kubeconfig selection
 
-The Jihwija installer installs the kubeconfig profile. `set-hostname argo`
+The Jihwija installer installs the kubeconfig profile. `set-hostname.py argo`
 renders and installs the Argo profile with the configured endpoint. Maintainers
 performing a manual source-tree setup can install them after replacing the
 `@ARGO_HOSTNAME@` placeholder:

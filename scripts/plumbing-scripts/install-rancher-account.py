@@ -14,7 +14,6 @@ from lib.platform_common import (
 def main():
     # Run this command as the administrator/root.
     # --username identifies the target account only; never switch to that user's UID.
-    require_root()
     p = argparse.ArgumentParser(
         description="Create a local Rancher user, a per-user project, and attach the user's namespace."
     )
@@ -27,6 +26,7 @@ def main():
     p.add_argument("--token", default=os.environ.get("RANCHER_TOKEN"),
                    help="Rancher admin API token. Prefer RANCHER_TOKEN.")
     args = p.parse_args()
+    require_root()
     args.hostname = require_hostname(args.hostname, "RANCHER_HOSTNAME")
 
     token = args.token or secure_prompt("Rancher admin API token: ")

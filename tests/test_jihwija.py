@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -32,6 +33,7 @@ lib_spec.loader.exec_module(lib_package)
 
 jihwija_common = importlib.import_module("jihwija_plumbing_lib.jihwija_common")
 k3s_gpu_taints = importlib.import_module("jihwija_plumbing_lib.k3s_gpu_taints")
+user_privileges = importlib.import_module("jihwija_plumbing_lib.user_privileges")
 JihwijaError = jihwija_common.JihwijaError
 add_host = jihwija_common.add_host
 inventory_hosts = jihwija_common.inventory_hosts
@@ -146,7 +148,7 @@ class InstallerTests(unittest.TestCase):
 class UserRemovalTests(unittest.TestCase):
     def test_failed_component_is_retained_and_linux_user_is_preserved(self):
         sys.modules["lib"] = lib_package
-        module = runpy.run_path(str(PLUMBING / "remove-user"))
+        module = runpy.run_path(str(PLUMBING / "remove-user.py"))
         main = module["main"]
         namespace = main.__globals__
         state = {
@@ -165,7 +167,7 @@ class UserRemovalTests(unittest.TestCase):
             require_hostname=lambda value, *_args: value,
             print_unverified_https_notice=lambda _services: None,
             run_plumbing=lambda name, *_args, **_kwargs: subprocess.CompletedProcess(
-                [], 0 if name == "uninstall-portainer-account" else 1
+                [], 0 if name == "uninstall-portainer-account.py" else 1
             ),
             save_state=lambda _username, value: saved.append({
                 **value,
@@ -176,7 +178,7 @@ class UserRemovalTests(unittest.TestCase):
         )
         original_argv = sys.argv
         sys.argv = [
-            "remove-user", "alice", "--only", "portainer,rancher",
+            "remove-user.py", "alice", "--only", "portainer,rancher",
             "--no-purge-data", "--yes",
         ]
         try:
@@ -191,6 +193,200 @@ class UserRemovalTests(unittest.TestCase):
         self.assertFalse(saved[-1]["portainer_account"])
         self.assertTrue(saved[-1]["linux_user"])
 
+    def test_final_user_removal_stops_when_privilege_cleanup_fails(self):
+        sys.modules["lib"] = lib_package
+        module = runpy.run_path(str(PLUMBING / "remove-user.py"))
+        main = module["main"]
+        namespace = main.__globals__
+        state = {
+            "services": ["harbor"],
+            "linux_user_created": True,
+            "home": "/nonexistent/jihwija-test-user",
+            "harbor_host": "harbor.example.test",
+            "harbor_account": True,
+        }
+        saved = []
+        removed_state = []
+        plumbing_calls = []
+
+        def run_plumbing(name, *_args, **_kwargs):
+            plumbing_calls.append(name)
+            return subprocess.CompletedProcess(
+                [], 1 if name == "revoke-user-privilege.py" else 0
+            )
+
+        namespace.update(
+            require_root=lambda: None,
+            validate_username=lambda value: value,
+            load_state=lambda _username: state,
+            user_exists=lambda _username: True,
+            require_hostname=lambda value, *_args: value,
+            print_unverified_https_notice=lambda _services: None,
+            run_plumbing=run_plumbing,
+            save_state=lambda _username, value: saved.append(dict(value)),
+            state_path=lambda username: Path("/state") / f"{username}.json",
+            remove_state=lambda username: removed_state.append(username),
+            run=lambda *_args, **_kwargs: self.fail(
+                "Linux account removal must wait for privilege cleanup"
+            ),
+        )
+        original_argv = sys.argv
+        sys.argv = [
+            "remove-user.py", "alice", "--only", "harbor",
+            "--no-purge-data", "--yes",
+        ]
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    main()
+        finally:
+            sys.argv = original_argv
+
+        self.assertEqual(raised.exception.code, 1)
+        self.assertEqual(
+            plumbing_calls,
+            ["uninstall-harbor-account.py", "revoke-user-privilege.py"],
+        )
+        self.assertEqual(saved[-1]["services"], [])
+        self.assertEqual(removed_state, [])
+
+
+class UserPrivilegeTests(unittest.TestCase):
+    def test_grant_validates_identity_and_applies_repeatable_manifest(self):
+        calls = []
+
+        def fake_kubectl(args, **kwargs):
+            calls.append((args, kwargs))
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with mock.patch.object(user_privileges, "kubectl", fake_kubectl):
+            user_privileges.grant_privilege("alice", "argo-template-admin")
+            user_privileges.grant_privilege("alice", "argo-template-admin")
+
+        apply_calls = [call for call in calls if call[0][:2] == ["apply", "-f"]]
+        self.assertEqual(len(apply_calls), 2)
+        self.assertEqual(
+            apply_calls[0][1]["input_data"],
+            apply_calls[1][1]["input_data"],
+        )
+        documents = list(yaml.safe_load_all(apply_calls[0][1]["input_data"]))
+        self.assertEqual(documents[0]["kind"], "ClusterRole")
+        self.assertEqual(
+            documents[0]["rules"][0]["resources"],
+            ["clusterworkflowtemplates"],
+        )
+        self.assertEqual(
+            set(documents[0]["rules"][0]["verbs"]),
+            {"get", "list", "watch", "create", "update", "patch", "delete"},
+        )
+        self.assertEqual(
+            documents[1]["subjects"],
+            [{
+                "kind": "ServiceAccount",
+                "name": "alice-user",
+                "namespace": "alice-namespace",
+            }],
+        )
+
+    def test_grant_rejects_missing_namespace_before_apply(self):
+        calls = []
+
+        def fake_kubectl(args, **kwargs):
+            calls.append(args)
+            return subprocess.CompletedProcess(args, 1, "", "not found")
+
+        with mock.patch.object(user_privileges, "kubectl", fake_kubectl):
+            with contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    user_privileges.grant_privilege(
+                        "alice", "argo-template-admin"
+                    )
+
+        self.assertEqual(calls, [["get", "namespace", "alice-namespace"]])
+
+    def test_grant_rejects_missing_service_account_before_apply(self):
+        calls = []
+
+        def fake_kubectl(args, **kwargs):
+            calls.append(args)
+            return subprocess.CompletedProcess(
+                args,
+                0 if args[:2] == ["get", "namespace"] else 1,
+                "",
+                "not found",
+            )
+
+        with mock.patch.object(user_privileges, "kubectl", fake_kubectl):
+            with contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    user_privileges.grant_privilege(
+                        "alice", "argo-template-admin"
+                    )
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1][2], "alice-user")
+        self.assertNotIn(["apply", "-f", "-"], calls)
+
+    def test_revoke_is_idempotent_and_does_not_require_user_resources(self):
+        calls = []
+
+        def fake_kubectl(args, **kwargs):
+            calls.append(args)
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with mock.patch.object(user_privileges, "kubectl", fake_kubectl):
+            user_privileges.revoke_privilege("departed-user", "argo-template-admin")
+            user_privileges.revoke_privilege("departed-user", "argo-template-admin")
+
+        expected = [
+            "delete",
+            "clusterrolebinding",
+            "departed-user-argo-cluster-workflow-template-admin",
+            "--ignore-not-found=true",
+        ]
+        self.assertEqual(calls, [expected, expected])
+
+    def test_unknown_privilege_is_rejected_by_plumbing_interface(self):
+        result = subprocess.run(
+            [str(PLUMBING / "grant-user-privilege.py"), "alice", "unknown-role"],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("invalid choice", result.stderr)
+        self.assertIn("argo-template-admin", result.stderr)
+
+    def test_argo_runner_uninstall_revokes_admin_binding(self):
+        sys.modules["lib"] = lib_package
+        module = runpy.run_path(str(PLUMBING / "uninstall-argo-workflow-runner.py"))
+        main = module["main"]
+        namespace = main.__globals__
+        revoked = []
+        kubectl_calls = []
+        namespace.update(
+            require_root=lambda: None,
+            determine_username=lambda value: value,
+            revoke_privilege=lambda username, privilege: revoked.append(
+                (username, privilege)
+            ),
+            kubectl=lambda args: kubectl_calls.append(args),
+        )
+        original_argv = sys.argv
+        sys.argv = [
+            "uninstall-argo-workflow-runner.py",
+            "--username", "alice",
+            "--namespace", "alice-namespace",
+        ]
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                main()
+        finally:
+            sys.argv = original_argv
+
+        self.assertEqual(revoked, [("alice", "argo-template-admin")])
+        flattened = [item for call in kubectl_calls for item in call]
+        self.assertNotIn("argo-cluster-workflow-template-admin", flattened)
+
 
 class RepositoryTests(unittest.TestCase):
     def test_all_public_routes_have_executable_plumbing(self):
@@ -199,15 +395,25 @@ class RepositoryTests(unittest.TestCase):
             self.assertTrue(path.is_file(), path)
             self.assertTrue(path.stat().st_mode & 0o111, path)
 
-        self.assertEqual(ROUTES["enable"]["quotas"], "enable-quotas")
-        self.assertEqual(ROUTES["disable"]["quotas"], "disable-quotas")
-        self.assertEqual(ROUTES["trust"]["certs"], "trust-k3s-certs")
+        self.assertEqual(ROUTES["enable"]["quotas"], "enable-quotas.py")
+        self.assertEqual(ROUTES["disable"]["quotas"], "disable-quotas.py")
+        self.assertEqual(ROUTES["trust"]["certs"], "trust-k3s-certs.py")
+        self.assertEqual(ROUTES["grant"]["user"], "grant-user-privilege.py")
+        self.assertEqual(ROUTES["revoke"]["user"], "revoke-user-privilege.py")
         self.assertEqual(
             resolve_route(["set", "user", "quota", "alice"]),
-            ("change-user-quota", 3),
+            ("change-user-quota.py", 3),
         )
-        self.assertEqual(resolve_route(["deploy", "--redeploy"]), ("deploy-services", 1))
-        self.assertEqual(resolve_route(["trust", "certs"]), ("trust-k3s-certs", 2))
+        self.assertEqual(resolve_route(["deploy", "--redeploy"]), ("deploy-services.py", 1))
+        self.assertEqual(resolve_route(["trust", "certs"]), ("trust-k3s-certs.py", 2))
+        self.assertEqual(
+            resolve_route(["grant", "user", "alice", "argo-template-admin"]),
+            ("grant-user-privilege.py", 2),
+        )
+        self.assertEqual(
+            resolve_route(["revoke", "user", "alice", "argo-template-admin"]),
+            ("revoke-user-privilege.py", 2),
+        )
         self.assertIsNone(resolve_route(["set", "user"]))
         self.assertIsNone(resolve_route(["add", "unknown"]))
         self.assertIn("k3s", format_help("install"))
@@ -215,25 +421,48 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn("quota", format_help("set user"))
         self.assertIn("node", format_help("add"))
         self.assertIn("certs", format_help("trust"))
+        self.assertIn("USERNAME PRIVILEGE", format_help("grant"))
+        self.assertIn("USERNAME PRIVILEGE", format_help("revoke"))
 
-    def test_python_modules_live_in_lib(self):
-        self.assertEqual(list(PLUMBING.glob("*.py")), [])
+    def test_all_plumbing_commands_use_py_extension(self):
         self.assertTrue((LIB / "jihwija_common.py").is_file())
+        commands = []
         for path in PLUMBING.iterdir():
             if path.is_file() and path.stat().st_mode & 0o111:
+                commands.append(path)
+                self.assertEqual(path.suffix, ".py", path)
                 self.assertNotIn("sys.path.insert", path.read_text(), path)
+        self.assertTrue(commands)
+
+    def test_cli_executes_python_plumbing_with_shared_lib_available(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "jihwija.cli",
+                "grant",
+                "user",
+                "--help",
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("jihwija grant user", result.stdout)
+        self.assertIn("argo-template-admin", result.stdout)
 
     def test_service_manifests_parse(self):
         for path in (ROOT / "jihwija-services").glob("*.yaml"):
             list(yaml.safe_load_all(path.read_text()))
 
     def test_k3s_install_reconciles_gpu_support(self):
-        install = (PLUMBING / "install-k3s").read_text()
-        add_node = (PLUMBING / "add-node").read_text()
-        deploy = (PLUMBING / "deploy-services").read_text()
-        self.assertIn('run_plumbing("deploy-services", "--service", "nvidia"', install)
-        self.assertIn('run_plumbing("deploy-services", "--service", "nvidia"', add_node)
-        self.assertIn('"k3s-taint-gpu-nodes"', deploy)
+        install = (PLUMBING / "install-k3s.py").read_text()
+        add_node = (PLUMBING / "add-node.py").read_text()
+        deploy = (PLUMBING / "deploy-services.py").read_text()
+        self.assertIn('run_plumbing("deploy-services.py", "--service", "nvidia"', install)
+        self.assertIn('run_plumbing("deploy-services.py", "--service", "nvidia"', add_node)
+        self.assertIn('"k3s-taint-gpu-nodes.py"', deploy)
 
 
 class GpuTaintTests(unittest.TestCase):

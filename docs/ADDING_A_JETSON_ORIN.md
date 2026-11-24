@@ -1,3 +1,14 @@
+---
+title: JIHWIJA-ADD-JETSON
+section: 7
+header: Jihwija Manual
+footer: Jihwija 0.1.0
+man-name: jihwija-add-jetson
+description: prepare an NVIDIA Jetson Orin as a Jihwija worker node
+---
+
+# Adding an NVIDIA Jetson Orin
+
 If you are adding a Jetson Orion to your cluster, then things will be different than just adding
 a RK1...
 Follow this gist instead to install everything you need:

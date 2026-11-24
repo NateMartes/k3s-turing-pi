@@ -11,7 +11,6 @@ from lib.platform_common import (
 
 
 def main():
-    require_root()
     parser = argparse.ArgumentParser(
         description="Update a database-authenticated Harbor user's password."
     )
@@ -25,6 +24,7 @@ def main():
         help="Harbor administrator password. Prefer HARBOR_ADMIN_PASSWORD.",
     )
     args = parser.parse_args()
+    require_root()
     args.hostname = require_hostname(args.hostname, "HARBOR_HOSTNAME")
 
     password = os.environ.get("USER_PASSWORD") or secure_prompt(

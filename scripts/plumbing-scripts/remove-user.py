@@ -225,7 +225,7 @@ def main():
         pa = ["-u", username, "-H", portainer_host]
         record_removal(
             "portainer",
-            run_plumbing("uninstall-portainer-account", pa, check=False, extra_env={
+            run_plumbing("uninstall-portainer-account.py", pa, check=False, extra_env={
                     "PORTAINER_API_KEY": DEFAULT_PORTAINER_API_KEY
                 }, raw_logs=args.raw_logs, label="Removing Portainer account and environment"
             ),
@@ -243,7 +243,7 @@ def main():
             ra += ["--cluster-id", cluster_id]
         record_removal(
             "rancher",
-            run_plumbing("uninstall-rancher-account", ra, check=False, extra_env={
+            run_plumbing("uninstall-rancher-account.py", ra, check=False, extra_env={
                     "RANCHER_TOKEN": DEFAULT_RANCHER_API_KEY
                 }, raw_logs=args.raw_logs, label="Removing Rancher account and project"
             ),
@@ -259,7 +259,7 @@ def main():
         record_removal(
             "harbor",
             run_plumbing(
-                "uninstall-harbor-account",
+                "uninstall-harbor-account.py",
                 ["-u", username, "-H", harbor_host],
                 check=False,
                 extra_env=(
@@ -282,7 +282,7 @@ def main():
         record_removal(
             "argo-workflow-runner",
             run_plumbing(
-                "uninstall-argo-workflow-runner",
+                "uninstall-argo-workflow-runner.py",
                 ["-u", username, "-n", state.get("namespace", username + "-namespace")],
                 check=False,
                 raw_logs=args.raw_logs,
@@ -300,7 +300,7 @@ def main():
         record_removal(
             "k3s-namespace",
             run_plumbing(
-                "uninstall-k3s-namespace", ["-u", username], check=False,
+                "uninstall-k3s-namespace.py", ["-u", username], check=False,
                 raw_logs=args.raw_logs, label="Removing K3s namespace",
             ),
         )
@@ -314,7 +314,7 @@ def main():
         print("\n[6/7] Removing Portainer Agent")
         record_removal(
             "portainer-agent",
-            run_plumbing("uninstall-portainer-agent", ["-u", username], check=False, extra_env={
+            run_plumbing("uninstall-portainer-agent.py", ["-u", username], check=False, extra_env={
                     "PORTAINER_API_KEY": DEFAULT_PORTAINER_API_KEY
                 }, raw_logs=args.raw_logs, label="Removing Portainer Agent"
             ),
@@ -333,7 +333,7 @@ def main():
         record_removal(
             "docker-rootless",
             run_plumbing(
-                "uninstall-docker-rootless", docker_args, check=False,
+                "uninstall-docker-rootless.py", docker_args, check=False,
                 raw_logs=args.raw_logs, label="Removing rootless Docker",
             ),
         )
@@ -360,6 +360,21 @@ def main():
         print(f"Removal selection: {', '.join(sorted(requested_services))}.")
         print(f"State retained for remaining services at {state_path(username)}.")
         return
+
+    print("\nRemoving elevated user privileges...")
+    privilege_result = run_plumbing(
+        "revoke-user-privilege.py",
+        [username, "argo-template-admin"],
+        check=False,
+        raw_logs=args.raw_logs,
+        label="Removing elevated user privileges",
+    )
+    if privilege_result.returncode != 0:
+        state["services"] = []
+        state["linux_user"] = user_exists(username)
+        save_state(username, state)
+        print("\nPrivilege cleanup failed; state was retained for a safe retry.")
+        raise SystemExit(1)
 
     if user_exists(username) and linux_user_created:
         print("\nRemoving Linux account...")

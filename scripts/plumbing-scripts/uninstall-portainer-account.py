@@ -10,7 +10,6 @@ from lib.platform_common import (
 def main():
     # Run this command as the administrator/root.
     # --username identifies the target account only; never switch to that user's UID.
-    require_root()
     p = argparse.ArgumentParser(description="Remove a user's Portainer account and its managed environment.")
     p.add_argument("-u", "--username", default=current_username())
     p.add_argument("-H", "--hostname", default=DEFAULT_PORTAINER_HOST)
@@ -18,6 +17,7 @@ def main():
     p.add_argument("--keep-environment", action="store_true",
                    help="Delete only the account, leaving <user>-docker registered.")
     args = p.parse_args()
+    require_root()
     args.hostname = require_hostname(args.hostname, "PORTAINER_HOSTNAME")
 
     api_key = args.api_key or secure_prompt("Portainer admin API key: ")

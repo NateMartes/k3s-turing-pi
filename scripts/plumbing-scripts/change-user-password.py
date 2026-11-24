@@ -93,14 +93,14 @@ def main():
     if was_created("harbor_account"):
         try:
             args_h = ["-u", username, "-H", harbor_host]
-            run_plumbing("set-harbor-password", args_h, extra_env=env)
+            run_plumbing("set-harbor-password.py", args_h, extra_env=env)
         except Exception as exc:
             failures.append(("Harbor", str(exc)))
 
     if was_created("rancher_account"):
         try:
             args_r = ["-u", username, "-H", rancher_host]
-            run_plumbing("set-rancher-password", args_r, extra_env=env)
+            run_plumbing("set-rancher-password.py", args_r, extra_env=env)
         except Exception as exc:
             failures.append(("Rancher", str(exc)))
 
@@ -108,13 +108,13 @@ def main():
         try:
             # Portainer does not have an admin password reset, so recreate the account.
             args_p = ["-u", username, "-H", portainer_host]
-            run_plumbing("uninstall-portainer-account", args_p, extra_env=env)
+            run_plumbing("uninstall-portainer-account.py", args_p, extra_env=env)
         except Exception as exc:
             failures.append(("Portainer", str(exc)))
 
         try:
             args_p = ["-u", username, "-H", portainer_host]
-            run_plumbing("install-portainer-account", args_p, extra_env=env)
+            run_plumbing("install-portainer-account.py", args_p, extra_env=env)
         except Exception as exc:
             failures.append(("Portainer", str(exc)))
 

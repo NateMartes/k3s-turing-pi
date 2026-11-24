@@ -260,7 +260,7 @@ def main():
         if "docker-rootless" in selected_services:
             print("\n[1/7] Installing rootless Docker")
             run_plumbing(
-                "install-docker-rootless", ["-u", username],
+                "install-docker-rootless.py", ["-u", username],
                 raw_logs=args.raw_logs, label="Installing rootless Docker",
             )
             state["docker_rootless"] = True
@@ -276,7 +276,7 @@ def main():
                 "--port", str(agent_port),
             ]
             run_plumbing(
-                "install-portainer-agent", agent_args,
+                "install-portainer-agent.py", agent_args,
                 raw_logs=args.raw_logs, label="Starting Portainer Agent",
             )
             state["portainer_agent"] = True
@@ -298,7 +298,7 @@ def main():
                     "--gpu-quota", k3s_gpu_quota,
                 ])
             run_plumbing(
-                "install-k3s-namespace",
+                "install-k3s-namespace.py",
                 k3s_args,
                 raw_logs=args.raw_logs,
                 label="Creating K3s namespace",
@@ -312,7 +312,7 @@ def main():
         if "argo-workflow-runner" in selected_services:
             print("\n[4/7] Installing Argo workflow runner")
             run_plumbing(
-                "install-argo-workflow-runner",
+                "install-argo-workflow-runner.py",
                 ["-u", username, "-n", state["namespace"]],
                 raw_logs=args.raw_logs,
                 label="Installing Argo workflow runner",
@@ -328,7 +328,7 @@ def main():
             if args.no_quota:
                 harbor_args.append("--no-quota")
             run_plumbing(
-                "install-harbor-account",
+                "install-harbor-account.py",
                 harbor_args,
                 extra_env={
                     "USER_PASSWORD": password,
@@ -352,7 +352,7 @@ def main():
             if args.cluster_id:
                 rancher_args += ["--cluster-id", args.cluster_id]
             run_plumbing(
-                "install-rancher-account",
+                "install-rancher-account.py",
                 rancher_args,
                 extra_env={
                     "USER_PASSWORD": password,
@@ -375,7 +375,7 @@ def main():
                 "--agent-port", str(agent_port),
             ]
             run_plumbing(
-                "install-portainer-account",
+                "install-portainer-account.py",
                 portainer_args,
                 extra_env={
                     "USER_PASSWORD": password,
@@ -392,7 +392,7 @@ def main():
     except Exception:
         print("\nProvisioning stopped before completion.")
         print(f"Partial state has been saved to {state_path(username)}.")
-        print("Run remove-user for this username to clean up the resources that were created.")
+        print("Run remove-user.py for this username to clean up the resources that were created.")
         raise
 
     print_resource_summary(

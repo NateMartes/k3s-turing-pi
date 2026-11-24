@@ -1,9 +1,18 @@
+---
+title: JIHWIJA-USERS
+section: 7
+header: Jihwija Manual
+footer: Jihwija 0.1.0
+man-name: jihwija-users
+description: provision and manage Jihwija cluster users
+---
+
 # User Setup Guide: Jihwija CLI & Manual Native Pipelines
 
 This guide provides complete instructions for provisioning and managing multi-tenant users on the Turing Pi K3s cluster. You can provision and conduct user environments using either:
 
 1. **Option A: Guided Automated Setup (Jihwija CLI)** — A streamlined CLI overlay (`jihwija`) that handles user account creation, quota configuration, password updates, and decommissioning with interactive prompts or scriptable flags.
-2. **Option B: Manual Native Setup (The "OG" Pipeline)** — The original, direct operational workflow running plumbing scripts and native tools (`create-user`, `remove-user`, `change-user-quota`, `change-user-password`, `install-*`, `uninstall-*`) step-by-step.
+2. **Option B: Manual Native Setup (The "OG" Pipeline)** — The original, direct operational workflow running plumbing scripts and native tools (`create-user.py`, `remove-user.py`, `change-user-quota.py`, `change-user-password.py`, `install-*`, `uninstall-*`) step-by-step.
 
 Both approaches configure the identical underlying user infrastructure across seven integrated platform components: Linux user account, filesystem storage quotas, rootless Docker daemon, Portainer Agent endpoint, K3s namespace with RBAC and ResourceQuotas, Argo Workflows runner with namespace isolation, Harbor container registry project, Rancher cluster project, and Portainer environment.
 
@@ -16,8 +25,8 @@ Both approaches configure the identical underlying user infrastructure across se
 Before provisioning users, ensure that the cluster infrastructure and services are deployed and healthy by following the **[Cluster Setup Guide](SETUP.md)**:
 
 - **K3s Cluster:** The K3s server and agents must be active and Ready (`kubectl get nodes`).
-- **Cluster Services:** Harbor, Rancher, Portainer, Argo Workflows, and cert-manager must be deployed (`jihwija deploy` or `./scripts/plumbing-scripts/deploy-services`).
-- **Service Certificate Trust:** Ingress TLS certificates must be distributed to system stores and containerd (`jihwija trust certs` or `./scripts/plumbing-scripts/trust-k3s-certs`).
+- **Cluster Services:** Harbor, Rancher, Portainer, Argo Workflows, and cert-manager must be deployed (`jihwija deploy` or `./scripts/plumbing-scripts/deploy-services.py`).
+- **Service Certificate Trust:** Ingress TLS certificates must be distributed to system stores and containerd (`jihwija trust certs` or `./scripts/plumbing-scripts/trust-k3s-certs.py`).
 - **Administrator Credentials:** Configured in `/etc/jihwija/jihwija.env` (or exported in your shell):
   - `HARBOR_ADMIN_PASSWORD` and `HARBOR_HOSTNAME`
   - `RANCHER_TOKEN`, `RANCHER_HOSTNAME`, and `RANCHER_CLUSTER_ID` (default `local`)
@@ -316,23 +325,23 @@ Plumbing executables live in `scripts/plumbing-scripts/`:
 
 ```
 scripts/plumbing-scripts/
-├── create-user                    # High-level provisioning orchestrator
-├── remove-user                    # High-level teardown orchestrator
-├── change-user-quota              # High-level quota updater
-├── change-user-password           # High-level password synchronizer
-├── enable-quotas                  # Filesystem quota initializer
-├── disable-quotas                 # Filesystem quota deactivator
-├── install-docker-rootless        # Rootless Docker installer
-├── install-portainer-agent        # Per-user Portainer Agent installer
-├── install-k3s-namespace          # K3s namespace & kubeconfig generator
-├── install-argo-workflow-runner   # Argo workflow runner & RBAC installer
-├── install-harbor-account         # Harbor user & project creator
-├── install-rancher-account        # Rancher user & project creator
-├── install-portainer-account      # Portainer user & endpoint creator
-├── set-harbor-password            # Harbor password updater
-├── set-rancher-password           # Rancher password updater
-├── set-harbor-quota               # Harbor project quota updater
-├── set-k3s-quota                  # K3s ResourceQuota updater
+├── create-user.py                    # High-level provisioning orchestrator
+├── remove-user.py                    # High-level teardown orchestrator
+├── change-user-quota.py              # High-level quota updater
+├── change-user-password.py           # High-level password synchronizer
+├── enable-quotas.py                  # Filesystem quota initializer
+├── disable-quotas.py                 # Filesystem quota deactivator
+├── install-docker-rootless.py        # Rootless Docker installer
+├── install-portainer-agent.py        # Per-user Portainer Agent installer
+├── install-k3s-namespace.py          # K3s namespace & kubeconfig generator
+├── install-argo-workflow-runner.py   # Argo workflow runner & RBAC installer
+├── install-harbor-account.py         # Harbor user & project creator
+├── install-rancher-account.py        # Rancher user & project creator
+├── install-portainer-account.py      # Portainer user & endpoint creator
+├── set-harbor-password.py            # Harbor password updater
+├── set-rancher-password.py           # Rancher password updater
+├── set-harbor-quota.py               # Harbor project quota updater
+├── set-k3s-quota.py                  # K3s ResourceQuota updater
 └── uninstall-*                    # Individual component teardown scripts
 ```
 
@@ -341,7 +350,7 @@ scripts/plumbing-scripts/
 Enable quotas on the filesystem containing `/home`:
 
 ```bash
-sudo ./scripts/plumbing-scripts/enable-quotas /home
+sudo ./scripts/plumbing-scripts/enable-quotas.py /home
 ```
 
 This verifies that `/etc/fstab` contains the `usrquota` mount option, runs `quotacheck -cum /home`, and activates quotas with `quotaon -u /home`.
@@ -384,12 +393,12 @@ source etc/jihwija.env
 set +a
 ```
 
-### 4. High-Level Native Provisioning (`create-user`)
+### 4. High-Level Native Provisioning (`create-user.py`)
 
 Run the main provisioning orchestrator directly:
 
 ```bash
-sudo -E ./scripts/plumbing-scripts/create-user -u bob \
+sudo -E ./scripts/plumbing-scripts/create-user.py -u bob \
   --quota 10GB \
   --k3s-cpu-quota 2 \
   --k3s-memory-quota 6Gi \
@@ -399,7 +408,7 @@ sudo -E ./scripts/plumbing-scripts/create-user -u bob \
 
 To run with unbuffered, raw command output:
 ```bash
-sudo -E ./scripts/plumbing-scripts/create-user -u bob --raw-logs
+sudo -E ./scripts/plumbing-scripts/create-user.py -u bob --raw-logs
 ```
 
 ### 5. Direct Component-by-Component Plumbing Execution
@@ -418,13 +427,13 @@ sudo setquota -u bob 10485760 10485760 0 0 /home
 
 #### Step 5.2: Install Rootless Docker
 ```bash
-sudo ./scripts/plumbing-scripts/install-docker-rootless -u bob
+sudo ./scripts/plumbing-scripts/install-docker-rootless.py -u bob
 ```
 This enables systemd user lingering (`loginctl enable-linger bob`), configures `/etc/subuid` and `/etc/subgid`, runs `dockerd-rootless-setuptool.sh`, and installs Docker Compose.
 
 #### Step 5.3: Install Portainer Agent
 ```bash
-sudo ./scripts/plumbing-scripts/install-portainer-agent \
+sudo ./scripts/plumbing-scripts/install-portainer-agent.py \
   -u bob \
   -H $PORTAINER_HOSTNAME \
   --port 9001
@@ -433,7 +442,7 @@ This starts the Portainer Agent container inside the user's rootless Docker daem
 
 #### Step 5.4: Create K3s Namespace & Kubeconfig
 ```bash
-sudo ./scripts/plumbing-scripts/install-k3s-namespace \
+sudo ./scripts/plumbing-scripts/install-k3s-namespace.py \
   -u bob \
   --cpu-quota 2 \
   --memory-quota 6Gi \
@@ -449,7 +458,7 @@ This creates:
 
 #### Step 5.5: Install Argo Workflow Runner
 ```bash
-sudo ./scripts/plumbing-scripts/install-argo-workflow-runner \
+sudo ./scripts/plumbing-scripts/install-argo-workflow-runner.py \
   -u bob \
   -n bob-namespace
 ```
@@ -459,7 +468,7 @@ This creates the `argo-workflow-runner` ServiceAccount in `bob-namespace` with R
 ```bash
 USER_PASSWORD="InitialPassword123!" \
 HARBOR_ADMIN_PASSWORD="$HARBOR_ADMIN_PASSWORD" \
-sudo -E ./scripts/plumbing-scripts/install-harbor-account \
+sudo -E ./scripts/plumbing-scripts/install-harbor-account.py \
   -u bob \
   -H $HARBOR_HOSTNAME
 ```
@@ -468,7 +477,7 @@ sudo -E ./scripts/plumbing-scripts/install-harbor-account \
 ```bash
 USER_PASSWORD="InitialPassword123!" \
 RANCHER_TOKEN="$RANCHER_TOKEN" \
-sudo -E ./scripts/plumbing-scripts/install-rancher-account \
+sudo -E ./scripts/plumbing-scripts/install-rancher-account.py \
   -u bob \
   -H $RANCHER_HOSTNAME \
   --cluster-id local
@@ -478,7 +487,7 @@ sudo -E ./scripts/plumbing-scripts/install-rancher-account \
 ```bash
 USER_PASSWORD="InitialPassword123!" \
 PORTAINER_API_KEY="$PORTAINER_API_KEY" \
-sudo -E ./scripts/plumbing-scripts/install-portainer-account \
+sudo -E ./scripts/plumbing-scripts/install-portainer-account.py \
   -u bob \
   -H $PORTAINER_HOSTNAME \
   --agent-address "$(hostname -f):9001" \
@@ -491,21 +500,21 @@ sudo -E ./scripts/plumbing-scripts/install-portainer-account \
 ```bash
 # Interactive or via stdin
 echo -n "NewSecurePassword123!" | \
-sudo -E ./scripts/plumbing-scripts/change-user-password -u bob --stdin
+sudo -E ./scripts/plumbing-scripts/change-user-password.py -u bob --stdin
 ```
 
 Or update individual services:
 ```bash
 # Update Harbor password only
-USER_PASSWORD="NewPass" sudo -E ./scripts/plumbing-scripts/set-harbor-password -u bob -H $HARBOR_HOSTNAME
+USER_PASSWORD="NewPass" sudo -E ./scripts/plumbing-scripts/set-harbor-password.py -u bob -H $HARBOR_HOSTNAME
 
 # Update Rancher password only
-USER_PASSWORD="NewPass" sudo -E ./scripts/plumbing-scripts/set-rancher-password -u bob -H $RANCHER_HOSTNAME
+USER_PASSWORD="NewPass" sudo -E ./scripts/plumbing-scripts/set-rancher-password.py -u bob -H $RANCHER_HOSTNAME
 ```
 
 #### Update Quotas
 ```bash
-sudo -E ./scripts/plumbing-scripts/change-user-quota bob \
+sudo -E ./scripts/plumbing-scripts/change-user-quota.py bob \
   --linux-quota 20GB \
   --k3s-cpu-quota 4 \
   --k3s-memory-quota 16Gi \
@@ -517,11 +526,11 @@ sudo -E ./scripts/plumbing-scripts/change-user-quota bob \
 Or update individual quotas:
 ```bash
 # Update K3s namespace quota only
-sudo ./scripts/plumbing-scripts/set-k3s-quota -u bob \
+sudo ./scripts/plumbing-scripts/set-k3s-quota.py -u bob \
   --cpu-quota 4 --memory-quota 16Gi --storage-quota 50Gi --gpu-quota 2
 
 # Update Harbor project quota only
-sudo -E ./scripts/plumbing-scripts/set-harbor-quota -u bob \
+sudo -E ./scripts/plumbing-scripts/set-harbor-quota.py -u bob \
   -H $HARBOR_HOSTNAME \
   --storage-quota-bytes 21474836480
 ```
@@ -530,7 +539,7 @@ sudo -E ./scripts/plumbing-scripts/set-harbor-quota -u bob \
 
 #### High-Level Orchestrated Teardown
 ```bash
-sudo -E ./scripts/plumbing-scripts/remove-user -u bob --purge-data --yes
+sudo -E ./scripts/plumbing-scripts/remove-user.py -u bob --purge-data --yes
 ```
 
 #### Individual Component Teardown Scripts
@@ -539,25 +548,25 @@ To remove individual components in reverse dependency order:
 
 ```bash
 # 1. Portainer account and environment
-sudo -E ./scripts/plumbing-scripts/uninstall-portainer-account -u bob -H $PORTAINER_HOSTNAME
+sudo -E ./scripts/plumbing-scripts/uninstall-portainer-account.py -u bob -H $PORTAINER_HOSTNAME
 
 # 2. Portainer agent container
-sudo ./scripts/plumbing-scripts/uninstall-portainer-agent -u bob
+sudo ./scripts/plumbing-scripts/uninstall-portainer-agent.py -u bob
 
 # 3. Rancher project and user
-sudo -E ./scripts/plumbing-scripts/uninstall-rancher-account -u bob -H $RANCHER_HOSTNAME
+sudo -E ./scripts/plumbing-scripts/uninstall-rancher-account.py -u bob -H $RANCHER_HOSTNAME
 
 # 4. Harbor project and user
-sudo -E ./scripts/plumbing-scripts/uninstall-harbor-account -u bob -H $HARBOR_HOSTNAME
+sudo -E ./scripts/plumbing-scripts/uninstall-harbor-account.py -u bob -H $HARBOR_HOSTNAME
 
 # 5. Argo workflow runner RBAC
-sudo ./scripts/plumbing-scripts/uninstall-argo-workflow-runner -u bob -n bob-namespace
+sudo ./scripts/plumbing-scripts/uninstall-argo-workflow-runner.py -u bob -n bob-namespace
 
 # 6. K3s namespace and kubeconfig
-sudo ./scripts/plumbing-scripts/uninstall-k3s-namespace -u bob
+sudo ./scripts/plumbing-scripts/uninstall-k3s-namespace.py -u bob
 
 # 7. Rootless Docker and lingering
-sudo ./scripts/plumbing-scripts/uninstall-docker-rootless -u bob
+sudo ./scripts/plumbing-scripts/uninstall-docker-rootless.py -u bob
 ```
 
 ### 8. Per-User State Tracking (`scripts/state/<username>.json`)
@@ -596,40 +605,11 @@ Jihwija persists component state in `/opt/jihwija/scripts/state/<username>.json`
 ```
 
 - **Reconciliation & Idempotency:** The state file records which components were provisioned so subsequent quota updates or removals know exactly what resources exist.
-- **Pre-existing Linux Accounts:** If `linux_user_created` is `false`, `remove-user` avoids deleting the host Linux account or home directory.
+- **Pre-existing Linux Accounts:** If `linux_user_created` is `false`, `remove-user.py` avoids deleting the host Linux account or home directory.
 
 ---
 
-## Command Cross-Reference: CLI vs Manual Native
+## Command Reference
 
-| Action | Jihwija CLI Command | Native Manual Command |
-| :--- | :--- | :--- |
-| **Enable Quotas** | `sudo jihwija enable quotas <path>` | `sudo ./scripts/plumbing-scripts/enable-quotas <path>` |
-| **Disable Quotas** | `sudo jihwija disable quotas <path>` | `sudo ./scripts/plumbing-scripts/disable-quotas <path>` |
-| **Provision User (Interactive)** | `sudo jihwija add user [name]` | `sudo ./scripts/plumbing-scripts/create-user -u [name]` |
-| **Provision User (Automated)** | `sudo jihwija add user [name] --quota 10GB ...` | `sudo ./scripts/plumbing-scripts/create-user -u [name] --quota 10GB ...` |
-| **Provision User (No Quotas)** | `sudo jihwija add user [name] --no-quota` | `sudo ./scripts/plumbing-scripts/create-user -u [name] --no-quota` |
-| **Provision User (Selective)** | `sudo jihwija add user [name] --only <list>` | `sudo ./scripts/plumbing-scripts/create-user -u [name] --only <list>` |
-| **Change User Password** | `sudo jihwija set user password [name]` | `sudo ./scripts/plumbing-scripts/change-user-password -u [name]` |
-| **Change User Quota** | `sudo jihwija set user quota [name] [flags]` | `sudo ./scripts/plumbing-scripts/change-user-quota -u [name] [flags]` |
-| **Remove User (Interactive)** | `sudo jihwija remove user [name]` | `sudo ./scripts/plumbing-scripts/remove-user -u [name]` |
-| **Remove User (Purge Data)** | `sudo jihwija remove user [name] --purge-data --yes` | `sudo ./scripts/plumbing-scripts/remove-user -u [name] --purge-data --yes` |
-| **Remove User (Selective)** | `sudo jihwija remove user [name] --only <list>` | `sudo ./scripts/plumbing-scripts/remove-user -u [name] --only <list>` |
-| **Install Docker Rootless** | — | `sudo ./scripts/plumbing-scripts/install-docker-rootless -u [name]` |
-| **Uninstall Docker Rootless** | — | `sudo ./scripts/plumbing-scripts/uninstall-docker-rootless -u [name]` |
-| **Install Portainer Agent** | — | `sudo ./scripts/plumbing-scripts/install-portainer-agent -u [name] -H <host>` |
-| **Uninstall Portainer Agent** | — | `sudo ./scripts/plumbing-scripts/uninstall-portainer-agent -u [name]` |
-| **Install K3s Namespace** | — | `sudo ./scripts/plumbing-scripts/install-k3s-namespace -u [name]` |
-| **Uninstall K3s Namespace** | — | `sudo ./scripts/plumbing-scripts/uninstall-k3s-namespace -u [name]` |
-| **Set K3s Namespace Quota** | — | `sudo ./scripts/plumbing-scripts/set-k3s-quota -u [name]` |
-| **Install Argo Runner** | — | `sudo ./scripts/plumbing-scripts/install-argo-workflow-runner -u [name] -n [ns]` |
-| **Uninstall Argo Runner** | — | `sudo ./scripts/plumbing-scripts/uninstall-argo-workflow-runner -u [name] -n [ns]` |
-| **Install Harbor Account** | — | `sudo ./scripts/plumbing-scripts/install-harbor-account -u [name] -H <host>` |
-| **Uninstall Harbor Account** | — | `sudo ./scripts/plumbing-scripts/uninstall-harbor-account -u [name] -H <host>` |
-| **Set Harbor Password** | — | `sudo ./scripts/plumbing-scripts/set-harbor-password -u [name] -H <host>` |
-| **Set Harbor Quota** | — | `sudo ./scripts/plumbing-scripts/set-harbor-quota -u [name] -H <host>` |
-| **Install Rancher Account** | — | `sudo ./scripts/plumbing-scripts/install-rancher-account -u [name] -H <host>` |
-| **Uninstall Rancher Account** | — | `sudo ./scripts/plumbing-scripts/uninstall-rancher-account -u [name] -H <host>` |
-| **Set Rancher Password** | — | `sudo ./scripts/plumbing-scripts/set-rancher-password -u [name] -H <host>` |
-| **Install Portainer Account**| — | `sudo ./scripts/plumbing-scripts/install-portainer-account -u [name] -H <host>` |
-| **Uninstall Portainer Account**| — | `sudo ./scripts/plumbing-scripts/uninstall-portainer-account -u [name] -H <host>` |
+See the dedicated **[CLI Command Reference](CLI_REFERENCE.md)** for managed-user
+CLI routes and the corresponding directly executable plumbing commands.

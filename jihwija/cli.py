@@ -7,38 +7,44 @@ from typing import Iterator
 
 
 ROUTES = {
-    "init": "init-cluster",
+    "init": "init-cluster.py",
     "install": {
-        "k3s": "install-k3s",
+        "k3s": "install-k3s.py",
     },
     "uninstall": {
-        "k3s": "uninstall-k3s",
+        "k3s": "uninstall-k3s.py",
     },
     "enable": {
-        "quotas": "enable-quotas",
+        "quotas": "enable-quotas.py",
     },
     "disable": {
-        "quotas": "disable-quotas",
+        "quotas": "disable-quotas.py",
     },
     "set": {
-        "secret": "set-secret",
-        "hostname": "set-hostname",
+        "secret": "set-secret.py",
+        "hostname": "set-hostname.py",
         "user": {
-            "quota": "change-user-quota",
-            "password": "change-user-password",
+            "quota": "change-user-quota.py",
+            "password": "change-user-password.py",
         },
     },
-    "deploy": "deploy-services",
+    "deploy": "deploy-services.py",
     "add": {
-        "node": "add-node",
-        "user": "create-user",
+        "node": "add-node.py",
+        "user": "create-user.py",
     },
     "remove": {
-        "node": "remove-node",
-        "user": "remove-user",
+        "node": "remove-node.py",
+        "user": "remove-user.py",
+    },
+    "grant": {
+        "user": "grant-user-privilege.py",
+    },
+    "revoke": {
+        "user": "revoke-user-privilege.py",
     },
     "trust": {
-        "certs": "trust-k3s-certs",
+        "certs": "trust-k3s-certs.py",
     },
 }
 
@@ -57,8 +63,11 @@ COMMAND_DESCRIPTIONS: list[tuple[str, str]] = [
     ("remove node HOSTNAME", "drain and remove a worker node"),
     ("add user [USERNAME]", "provision a managed user"),
     ("remove user [USERNAME]", "remove a managed user"),
+    ("grant user USERNAME PRIVILEGE", "grant an allowlisted user privilege"),
+    ("revoke user USERNAME PRIVILEGE", "revoke an allowlisted user privilege"),
     ("trust certs", "install and distribute service certificate trust"),
 ]
+COMMAND_WIDTH = max(len(syntax) for syntax, _ in COMMAND_DESCRIPTIONS) + 2
 
 
 def format_help(prefix: str = "") -> str:
@@ -72,7 +81,7 @@ def format_help(prefix: str = "") -> str:
             "commands:",
         ]
         for syntax, desc in COMMAND_DESCRIPTIONS:
-            lines.append(f"  {syntax:<24} {desc}")
+            lines.append(f"  {syntax:<{COMMAND_WIDTH}} {desc}")
         lines.append("")
         lines.append("Run `jihwija COMMAND --help` for command-specific options.")
         return "\n".join(lines) + "\n"
@@ -92,7 +101,7 @@ def format_help(prefix: str = "") -> str:
         "commands:",
     ]
     for syntax, desc in matched:
-        lines.append(f"  {syntax:<24} {desc}")
+        lines.append(f"  {syntax:<{COMMAND_WIDTH}} {desc}")
     lines.append("")
     lines.append(f"Run `jihwija {prefix} COMMAND --help` for command-specific options.")
     return "\n".join(lines) + "\n"
@@ -203,10 +212,11 @@ def main() -> None:
 
     prog_name = f"jihwija {' '.join(args[:consumed])}"
 
-    # If the plumbing script is Python, run it via sys.executable and runpy so:
+    # If the plumbing script is Python, run it via sys.executable so:
     # 1. sys.executable runs the script directly (preventing virtualenv/system-python mismatch).
     # 2. sys.argv[0] is set to the unified CLI command (e.g. `jihwija add node`), so
     #    argparse help and error messages display the CLI command rather than plumbing filenames.
+    # 3. The plumbing directory is importable so scripts can load their shared `lib` package.
     is_python = True
     try:
         with script.open("rb") as handle:
@@ -218,10 +228,14 @@ def main() -> None:
 
     if is_python:
         runner = (
-            "import runpy, sys; "
+            "import os, sys; "
             "prog, path = sys.argv[1], sys.argv[2]; "
+            "sys.path.insert(0, os.path.dirname(path)); "
             "sys.argv = [prog, *sys.argv[3:]]; "
-            "runpy.run_path(path, run_name='__main__')"
+            "code = compile(open(path, 'rb').read(), path, 'exec'); "
+            "scope = {'__name__': '__main__', '__file__': path, "
+            "'__package__': None, '__cached__': None}; "
+            "exec(code, scope)"
         )
         os.execv(
             sys.executable,

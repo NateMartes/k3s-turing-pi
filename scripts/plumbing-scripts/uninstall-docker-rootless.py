@@ -33,7 +33,7 @@ def determine_username(argument: str | None) -> str:
 
     die(
         "A target username is required when running as root.\n"
-        "Example: uninstall-docker-rootless -u bob"
+        "Example: uninstall-docker-rootless.py -u bob"
     )
 
 

@@ -35,6 +35,7 @@ Comprehensive operational and architecture guides are available in [`docs/`](doc
 
 | Guide | Description |
 | :--- | :--- |
+| **[CLI Command Reference](docs/CLI_REFERENCE.md)** | Complete mapping from the Jihwija CLI to its native playbooks and plumbing scripts. |
 | **[Cluster Setup Guide](docs/SETUP.md)** | Step-by-step walkthrough for cluster initialization, K3s provisioning, service deployment, and node management via the Jihwija CLI or manual native pipelines. |
 | **[User Setup Guide](docs/SETUP_USERS.md)** | Dedicated guide for multi-tenant user provisioning, filesystem/K3s quotas, password updates, and service integrations. |
 | **[Web UI Tunneling](docs/TUNNELING.md)** | Instructions for accessing cluster dashboards (Rancher, Harbor, Portainer, Argo) from remote workstations via SOCKS5 proxy. |
@@ -46,6 +47,22 @@ Component-specific technical references:
 - **[Ansible Playbooks](ansible/README.md):** Directly runnable playbooks and inventory specifications.
 - **[Cluster Services](jihwija-services/README.md):** Kustomize overlays and HelmChart definitions.
 - **[Plumbing Scripts](scripts/README.md):** Directly executable maintainer scripts powering the CLI.
+
+### Building the Man Pages
+
+The Markdown files in `docs/` are the man-page sources; this repository
+`README.md` is intentionally separate. Install Pandoc and Make, then build and
+preview the pages locally:
+
+```bash
+sudo apt install pandoc make
+make -C docs check
+man -l docs/build/man/jihwija.1
+```
+
+Install them under `/usr/local/share/man` with `sudo make -C docs install-man`.
+After installation, use `man jihwija` for the CLI reference or, for example,
+`man 7 jihwija-setup` for the cluster setup guide.
 
 ---
 

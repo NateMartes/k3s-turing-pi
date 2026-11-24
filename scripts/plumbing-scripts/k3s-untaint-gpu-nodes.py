@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
+import argparse
+
 from lib.k3s_gpu_taints import (
     GPU_RESOURCE, GPU_TAINT_EFFECT, kubectl, tainted_node_names,
 )
 
 
 def main() -> None:
+    argparse.ArgumentParser(
+        description="Remove Jihwija's scheduling taint from every tainted GPU node."
+    ).parse_args()
     node_names = tainted_node_names()
     if not node_names:
         print(f"No nodes have the {GPU_RESOURCE}:{GPU_TAINT_EFFECT} taint.")

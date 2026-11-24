@@ -101,7 +101,7 @@ def main() -> None:
         try:
             run_ansible_playbook("setup-k3s.yml")
             # Reconcile GPU discovery and taints as part of every worker join.
-            run_plumbing("deploy-services", "--service", "nvidia", "--timeout", "10m")
+            run_plumbing("deploy-services.py", "--service", "nvidia", "--timeout", "10m")
         except subprocess.CalledProcessError as exc:
             raise JihwijaError(
                 "K3s provisioning failed; the inventory entry was retained as desired state. "

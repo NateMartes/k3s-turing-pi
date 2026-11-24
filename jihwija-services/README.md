@@ -166,7 +166,7 @@ the GPU taint. It is reconciled again when a node is added or the service bundle
 is deployed. Maintainers can also run the same plumbing operation directly:
 
 ```bash
-sudo ./scripts/plumbing-scripts/k3s-taint-gpu-nodes
+sudo ./scripts/plumbing-scripts/k3s-taint-gpu-nodes.py
 ```
 
 This applies `nvidia.com/gpu=true:NoSchedule` to every node discovered by NFD
@@ -175,7 +175,7 @@ or advertising an allocatable GPU. GPU workloads must request
 workloads on those nodes again:
 
 ```bash
-sudo ./scripts/plumbing-scripts/k3s-untaint-gpu-nodes
+sudo ./scripts/plumbing-scripts/k3s-untaint-gpu-nodes.py
 ```
 
 ### 6. Trust and distribute the private ingress certificates
@@ -185,7 +185,7 @@ authorities, configure containerd trust for every Jihwija-service hostname,
 and distribute the resulting files to every Ready K3s node:
 
 ```bash
-sudo ./scripts/plumbing-scripts/trust-k3s-certs
+sudo ./scripts/plumbing-scripts/trust-k3s-certs.py
 ```
 
 Harbor's official chart generates its ingress certificate automatically. The

@@ -181,14 +181,14 @@ def main() -> None:
     if args.service in (None, "nvidia"):
         subprocess.run(
             [
-                str(Path(__file__).resolve().parent / "k3s-taint-gpu-nodes"),
+                str(Path(__file__).resolve().parent / "k3s-taint-gpu-nodes.py"),
                 "--wait-timeout",
                 "30",
             ],
             check=True,
         )
     if args.service is None:
-        subprocess.run([str(Path(__file__).resolve().parent / "trust-k3s-certs")], check=True)
+        subprocess.run([str(Path(__file__).resolve().parent / "trust-k3s-certs.py")], check=True)
     if args.service == "nvidia":
         return
     values = configured_values()

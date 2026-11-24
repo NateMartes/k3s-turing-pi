@@ -11,7 +11,6 @@ from lib.platform_common import (
 
 def main():
     """Delete a managed Harbor project (including artifacts) and its local account."""
-    require_root()
     parser = argparse.ArgumentParser(
         description="Remove a user's private Harbor <user>-namespace project and local account."
     )
@@ -30,6 +29,7 @@ def main():
         help="Delete only the account, leaving <user>-namespace and its artifacts.",
     )
     args = parser.parse_args()
+    require_root()
     args.hostname = require_hostname(args.hostname, "HARBOR_HOSTNAME")
 
     get_user(args.username)

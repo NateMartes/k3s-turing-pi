@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/part-of: jihwija
 type: Opaque
 data:
-  # Rendered by scripts/plumbing-scripts/deploy-services from jihwija.env.
+  # Rendered by scripts/plumbing-scripts/deploy-services.py from jihwija.env.
   HARBOR_ADMIN_PASSWORD: ${HARBOR_ADMIN_PASSWORD_B64}
 ---
 apiVersion: helm.cattle.io/v1
@@ -33,7 +33,7 @@ spec:
         certSource: auto
       ingress:
         hosts:
-          # Rendered by scripts/plumbing-scripts/deploy-services from jihwija.env.
+          # Rendered by scripts/plumbing-scripts/deploy-services.py from jihwija.env.
           core: ${HARBOR_HOSTNAME}
         className: traefik
         annotations:
@@ -41,12 +41,12 @@ spec:
           ingress.kubernetes.io/proxy-body-size: "0"
           traefik.ingress.kubernetes.io/router.tls: "true"
 
-    # Rendered by scripts/plumbing-scripts/deploy-services from jihwija.env.
+    # Rendered by scripts/plumbing-scripts/deploy-services.py from jihwija.env.
     externalURL: https://${HARBOR_HOSTNAME}
 
     # Run schema migrations before upgrading the Harbor workloads so core does
     # not have to migrate the database while jobservice is trying to start.
-    # scripts/plumbing-scripts/deploy-services waits for PostgreSQL before updating this
+    # scripts/plumbing-scripts/deploy-services.py waits for PostgreSQL before updating this
     # HelmChart because the upstream migration Job has no init-container hook.
     enableMigrateHelmHook: true
 

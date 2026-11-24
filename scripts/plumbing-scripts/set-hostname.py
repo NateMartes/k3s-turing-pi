@@ -68,7 +68,7 @@ def main() -> None:
             redeploy = prompt_bool("Service is already deployed; redeploy it?", False)
         if deployed and redeploy:
             subprocess.run(
-                [str(PLUMBING_DIR / "deploy-services"), "--service", args.service],
+                [str(PLUMBING_DIR / "deploy-services.py"), "--service", args.service],
                 check=True,
             )
         elif not deployed:

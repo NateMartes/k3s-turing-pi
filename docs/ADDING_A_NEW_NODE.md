@@ -1,3 +1,12 @@
+---
+title: JIHWIJA-ADD-NODE
+section: 7
+header: Jihwija Manual
+footer: Jihwija 0.1.0
+man-name: jihwija-add-node
+description: prepare and add a worker node to a Jihwija cluster
+---
+
 # Adding a New Node to the Cluster
 
 1. On your machine, download a pre-installed Ubuntu image for your node:

@@ -16,7 +16,6 @@ DEFAULT_STORAGE_QUOTA_BYTES = 10 * 1024 * 1024 * 1024
 
 def main():
     """Create a local Harbor user and a private project named after its K3s namespace."""
-    require_root()
     parser = argparse.ArgumentParser(
         description="Create a local Harbor user and a private <user>-namespace project."
     )
@@ -48,6 +47,7 @@ def main():
         help="Harbor administrator password. Prefer HARBOR_ADMIN_PASSWORD.",
     )
     args = parser.parse_args()
+    require_root()
     args.hostname = require_hostname(args.hostname, "HARBOR_HOSTNAME")
     if not args.no_quota and args.storage_quota_bytes <= 0:
         parser.error("--storage-quota-bytes must be greater than zero")

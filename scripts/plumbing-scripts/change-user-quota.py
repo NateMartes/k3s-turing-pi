@@ -35,8 +35,8 @@ def main():
     p.add_argument("--raw-logs", action="store_true")
     args = p.parse_args()
 
-    # Preserve the earlier `change-user-quota 10GB -u bob` plumbing form while
-    # making `change-user-quota bob` natural for the public CLI route.
+    # Preserve the earlier `change-user-quota.py 10GB -u bob` plumbing form while
+    # making `change-user-quota.py bob` natural for the public CLI route.
     if (
         args.username
         and args.username_arg
@@ -92,7 +92,7 @@ def main():
     print_unverified_https_notice([("Harbor", harbor_host)])
 
     run_plumbing(
-        "set-k3s-quota",
+        "set-k3s-quota.py",
         ["-u", username, "--cpu-quota", cpu_quota,
          "--memory-quota", memory_quota, "--storage-quota", storage_quota,
          "--gpu-quota", gpu_quota],
@@ -112,7 +112,7 @@ def main():
         if DEFAULT_HARBOR_ADMIN_PASSWORD else None
     )
     run_plumbing(
-        "set-harbor-quota",
+        "set-harbor-quota.py",
         ["-u", username, "-H", harbor_host,
          "--storage-quota-bytes", str(harbor_bytes)],
         extra_env=harbor_env,

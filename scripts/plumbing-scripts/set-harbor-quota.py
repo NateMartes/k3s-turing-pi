@@ -10,7 +10,6 @@ from lib.platform_common import (
 
 
 def main():
-    require_root()
     parser = argparse.ArgumentParser(description="Update a user's Harbor project quota.")
     parser.add_argument("-u", "--username", default=current_username())
     parser.add_argument("-H", "--hostname", default=DEFAULT_HARBOR_HOST)
@@ -22,6 +21,7 @@ def main():
         "--admin-password", default=os.environ.get("HARBOR_ADMIN_PASSWORD")
     )
     args = parser.parse_args()
+    require_root()
     args.hostname = require_hostname(args.hostname, "HARBOR_HOSTNAME")
     if args.storage_quota_bytes <= 0:
         parser.error("--storage-quota-bytes must be greater than zero")

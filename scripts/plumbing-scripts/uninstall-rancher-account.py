@@ -11,13 +11,13 @@ from lib.platform_common import (
 def main():
     # Run this command as the administrator/root.
     # --username identifies the target account only; never switch to that user's UID.
-    require_root()
     p = argparse.ArgumentParser(description="Remove a user's Rancher project and local Rancher account.")
     p.add_argument("-u", "--username", default=current_username())
     p.add_argument("-H", "--hostname", default=DEFAULT_RANCHER_HOST)
     p.add_argument("--cluster-id", default=os.environ.get("RANCHER_CLUSTER_ID"))
     p.add_argument("--token", default=os.environ.get("RANCHER_TOKEN"))
     args = p.parse_args()
+    require_root()
     args.hostname = require_hostname(args.hostname, "RANCHER_HOSTNAME")
 
     token = args.token or secure_prompt("Rancher admin API token: ")
