@@ -77,6 +77,8 @@ swapped=1
 mv "$stage" "$install_root"
 stage=""
 python3 -m venv "$install_root/.venv"
+"$install_root/.venv/bin/pip" install \
+    --disable-pip-version-check 'setuptools>=68'
 "$install_root/.venv/bin/pip" install --disable-pip-version-check --no-build-isolation -e "$install_root"
 
 mkdir -p "$install_root/etc" "$install_root/scripts/state" "$(dirname -- "$link_path")"

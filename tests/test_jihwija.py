@@ -119,10 +119,18 @@ class InstallerTests(unittest.TestCase):
                 "#!/bin/sh\n"
                 "venv=$3\n"
                 "mkdir -p \"$venv/bin\"\n"
-                "printf '#!/bin/sh\\nexit 42\\n' > \"$venv/bin/pip\"\n"
+                "cat > \"$venv/bin/pip\" <<'EOF'\n"
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >> \"$JIHWIJA_TEST_PIP_LOG\"\n"
+                "case \" $* \" in\n"
+                "  *\" setuptools>=68 \"*) exit 0 ;;\n"
+                "  *) exit 42 ;;\n"
+                "esac\n"
+                "EOF\n"
                 "chmod +x \"$venv/bin/pip\"\n"
             )
             fake_python.chmod(0o755)
+            pip_log = root / "pip.log"
 
             env = os.environ.copy()
             env.update(
@@ -130,6 +138,7 @@ class InstallerTests(unittest.TestCase):
                 JIHWIJA_LINK_PATH=str(root / "bin-links" / "jihwija"),
                 JIHWIJA_PROFILE_DIR=str(root / "profiles"),
                 JIHWIJA_SKIP_PACKAGES="1",
+                JIHWIJA_TEST_PIP_LOG=str(pip_log),
                 PATH=f"{fake_bin}:{env['PATH']}",
             )
             result = subprocess.run(
@@ -143,6 +152,9 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(marker.read_text(), "preserve me\n")
             self.assertFalse((install_root / "pyproject.toml").exists())
             self.assertIn("restoring the previous", result.stderr)
+            pip_calls = pip_log.read_text().splitlines()
+            self.assertIn("setuptools>=68", pip_calls[0])
+            self.assertIn("--no-build-isolation -e", pip_calls[1])
 
 
 class UserRemovalTests(unittest.TestCase):

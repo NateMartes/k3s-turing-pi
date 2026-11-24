@@ -11,6 +11,10 @@ k3s_dns_servers:
 # Override this per host only when its physical interface name is stable.
 k3s_flannel_iface: ""
 
+# Leave empty to use K3s's default OverlayFS snapshotter. Nested test
+# environments can use "native" when OverlayFS cannot be stacked.
+k3s_snapshotter: ""
+
 # setup-dhcp.yml stages configuration without applying it by default because a
 # new DHCP address can terminate Ansible's SSH connection. Override the
 # interface or Netplan definition per host only when automatic discovery is not

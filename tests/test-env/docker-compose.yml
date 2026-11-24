@@ -1,0 +1,94 @@
+name: jihwija-test
+
+x-node: &node
+  image: jihwija-test-node:ubuntu24.04
+  privileged: true
+  cgroup: host
+  environment:
+    container: docker
+  tmpfs:
+    - /run
+    - /run/lock
+  volumes:
+    - test-ssh:/test-ssh:ro
+    - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    - /lib/modules:/lib/modules:ro
+    - ../..:/workspace:ro
+  depends_on:
+    ssh-key:
+      condition: service_completed_successfully
+  healthcheck:
+    test: ["CMD-SHELL", "systemctl is-active --quiet ssh.service"]
+    interval: 5s
+    timeout: 3s
+    retries: 30
+    start_period: 10s
+  stop_grace_period: 2m
+
+services:
+  ssh-key:
+    build:
+      context: .
+      target: node
+    image: jihwija-test-node:ubuntu24.04
+    command: ["/usr/local/sbin/generate-test-ssh-key"]
+    volumes:
+      - test-ssh:/test-ssh
+    restart: "no"
+
+  operator:
+    build:
+      context: .
+      target: operator
+    image: jihwija-test-operator:ubuntu24.04
+    working_dir: /workspace/tests/test-env
+    command: ["sleep", "infinity"]
+    volumes:
+      - ../..:/workspace:ro
+    networks:
+      - cluster
+    depends_on:
+      controller:
+        condition: service_healthy
+      worker-1:
+        condition: service_healthy
+      worker-2:
+        condition: service_healthy
+
+  controller:
+    <<: *node
+    hostname: test-controller
+    ports:
+      - "127.0.0.1:16443:6443"
+      - "127.0.0.1:18080:80"
+      - "127.0.0.1:18443:443"
+    networks:
+      cluster:
+        ipv4_address: 172.31.42.10
+
+  worker-1:
+    <<: *node
+    hostname: test-worker-1
+    networks:
+      cluster:
+        ipv4_address: 172.31.42.11
+
+  worker-2:
+    <<: *node
+    hostname: test-worker-2
+    networks:
+      cluster:
+        ipv4_address: 172.31.42.12
+
+networks:
+  cluster:
+    name: jihwija-test-lan
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.42.0/24
+          gateway: 172.31.42.1
+
+volumes:
+  test-ssh:
+    name: jihwija-test-ssh

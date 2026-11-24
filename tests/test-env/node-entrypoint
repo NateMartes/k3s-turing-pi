@@ -1,0 +1,36 @@
+#!/bin/sh
+set -eu
+
+if [ "${1:-}" != /sbin/init ]; then
+    exec "$@"
+fi
+
+key=/test-ssh/id_ed25519
+public_key=${key}.pub
+
+if [ ! -s "$key" ] || [ ! -s "$public_key" ]; then
+    echo "The shared test SSH key was not initialized." >&2
+    exit 1
+fi
+
+for home in /root /home/ansible; do
+    install -d -m 0700 "$home/.ssh"
+    install -m 0600 "$public_key" "$home/.ssh/authorized_keys"
+done
+
+# The controller uses this key when Jihwija distributes certificate trust to
+# the worker nodes. It is generated per Compose environment and never leaves
+# the Docker volume.
+install -m 0600 "$key" /root/.ssh/id_ed25519
+cat > /root/.ssh/config <<'EOF'
+Host 172.31.42.*
+    BatchMode yes
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LogLevel ERROR
+EOF
+chmod 0600 /root/.ssh/config
+
+chown -R ansible:ansible /home/ansible/.ssh
+
+exec "$@"

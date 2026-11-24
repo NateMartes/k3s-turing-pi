@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+key=/test-ssh/id_ed25519
+umask 077
+
+if [ ! -f "$key" ]; then
+    ssh-keygen -q -t ed25519 -N '' -C jihwija-test-env -f "$key"
+fi
+
+# Recreate the public half if the named volume survived an interrupted setup.
+public_key="${key}.pub.tmp"
+ssh-keygen -y -f "$key" > "$public_key"
+printf ' jihwija-test-env\n' >> "$public_key"
+mv "$public_key" "${key}.pub"
+chmod 0600 "$key"
+chmod 0644 "${key}.pub"

@@ -51,6 +51,7 @@ name.
 | `is_jihwija_service_node` | Per host | At least one node must be `true`; missing values default to `false`. | Adds the Kubernetes label `jihwija-services=true`, allowing selected Jihwija workloads to run on the node. Harbor additionally requires that a selected node be AMD64. |
 | `is_desktop_node` | Per host | Optional; defaults to `false`. | Allows `setup-desktop-packages.yml` to modify the node. Nodes without this flag are skipped. |
 | `k3s_flannel_iface` | All nodes or per host | Optional; defaults to an empty string in `group_vars/all.yml`. | Pins Flannel to a stable network interface. Leave empty to let Flannel select the interface that routes the node IP. |
+| `k3s_snapshotter` | All nodes or per host | Optional; an empty or missing value keeps the K3s default. | Overrides the containerd snapshotter. The Docker test environment uses `native` because OverlayFS cannot be nested on every host. |
 | `netplan_dhcp_apply` | All nodes | Optional; defaults to `false`. | Applies the validated Netplan DHCP configuration immediately. Leave false to stage it safely. |
 | `netplan_dhcp_interface` | Per host | Optional; discovered from `ansible_host` by default. | Overrides the Linux LAN interface configured by `setup-dhcp.yml`. |
 | `netplan_dhcp_definition` | Per host | Optional; defaults to the selected interface name. | Overrides the Netplan Ethernet definition ID when it differs from the Linux interface name. |

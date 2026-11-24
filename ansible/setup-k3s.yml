@@ -182,6 +182,9 @@
           {% if k3s_flannel_iface | default('') | length > 0 %}
           flannel-iface: "{{ k3s_flannel_iface }}"
           {% endif %}
+          {% if k3s_snapshotter | default('') | length > 0 %}
+          snapshotter: "{{ k3s_snapshotter }}"
+          {% endif %}
           cluster-cidr: "{{ k3s_cluster_cidr }}"
           service-cidr: "{{ k3s_service_cidr }}"
           resolv-conf: "{{ k3s_resolv_conf }}"
@@ -302,6 +305,9 @@
           node-ip: "{{ k3s_node_ip }}"
           {% if k3s_flannel_iface | default('') | length > 0 %}
           flannel-iface: "{{ k3s_flannel_iface }}"
+          {% endif %}
+          {% if k3s_snapshotter | default('') | length > 0 %}
+          snapshotter: "{{ k3s_snapshotter }}"
           {% endif %}
           resolv-conf: "{{ k3s_resolv_conf }}"
       no_log: true
