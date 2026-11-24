@@ -2,7 +2,7 @@
 title: JIHWIJA-ARGO-TEMPLATE-ADMIN
 section: 7
 header: Jihwija Manual
-footer: Jihwija 0.1.0
+footer: Jihwija
 man-name: jihwija-argo-template-admin
 description: manage elevated access to shared Argo workflow templates
 ---

@@ -2,7 +2,7 @@
 title: JIHWIJA-TUNNELING
 section: 7
 header: Jihwija Manual
-footer: Jihwija 0.1.0
+footer: Jihwija
 man-name: jihwija-tunneling
 description: access Jihwija web services through an SSH tunnel
 ---

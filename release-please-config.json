@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "892485cafd5bf3c1e80c6c9a8de6e6320dde0d8d",
+  "include-v-in-tag": true,
+  "include-component-in-tag": false,
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "docs", "section": "Documentation" },
+    { "type": "refactor", "section": "Refactoring" },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "build", "section": "Build System", "hidden": true },
+    { "type": "ci", "section": "Continuous Integration", "hidden": true },
+    { "type": "chore", "section": "Maintenance", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "release-type": "python",
+      "package-name": "jihwija",
+      "component": "jihwija",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        "jihwija/__init__.py"
+      ]
+    }
+  }
+}

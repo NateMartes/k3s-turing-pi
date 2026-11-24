@@ -2,7 +2,7 @@
 title: JIHWIJA-SETUP
 section: 7
 header: Jihwija Manual
-footer: Jihwija 0.1.0
+footer: Jihwija
 man-name: jihwija-setup
 description: install and configure a Jihwija cluster
 ---

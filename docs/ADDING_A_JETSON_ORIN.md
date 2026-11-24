@@ -2,7 +2,7 @@
 title: JIHWIJA-ADD-JETSON
 section: 7
 header: Jihwija Manual
-footer: Jihwija 0.1.0
+footer: Jihwija
 man-name: jihwija-add-jetson
 description: prepare an NVIDIA Jetson Orin as a Jihwija worker node
 ---

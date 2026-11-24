@@ -1,4 +1,7 @@
 bin/
+build/
+dist/
+*.egg-info/
 snap/
 __pycache__/
 .ansible/

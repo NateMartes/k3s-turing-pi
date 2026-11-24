@@ -2,7 +2,7 @@
 title: JIHWIJA
 section: 1
 header: Jihwija Manual
-footer: Jihwija 0.1.0
+footer: Jihwija
 man-name: jihwija
 description: command-line interface and native plumbing command reference
 ---

@@ -2,7 +2,7 @@
 title: JIHWIJA-USERS
 section: 7
 header: Jihwija Manual
-footer: Jihwija 0.1.0
+footer: Jihwija
 man-name: jihwija-users
 description: provision and manage Jihwija cluster users
 ---

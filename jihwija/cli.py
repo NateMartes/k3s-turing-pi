@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from typing import Iterator
 
+from jihwija import __version__
+
 
 ROUTES = {
     "init": "init-cluster.py",
@@ -165,7 +167,7 @@ def main() -> None:
         return
 
     if args in (["-v"], ["--version"]):
-        print("jihwija 0.1.0")
+        print(f"jihwija {__version__}")
         return
 
     # Normalize `jihwija help ...` to equivalent `--help` invocation.
