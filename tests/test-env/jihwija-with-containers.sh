@@ -14,8 +14,10 @@ readonly RANCHER_HOSTNAME="rancher.${CONTROLLER_IP}.sslip.io"
 readonly HARBOR_HOSTNAME="harbor.${CONTROLLER_IP}.sslip.io"
 readonly PORTAINER_HOSTNAME="portainer.${CONTROLLER_IP}.sslip.io"
 readonly ARGO_HOSTNAME="argo.${CONTROLLER_IP}.sslip.io"
+readonly GRAFANA_HOSTNAME="grafana.${CONTROLLER_IP}.sslip.io"
 readonly RANCHER_BOOTSTRAP_PASSWORD="${JIHWIJA_RANCHER_BOOTSTRAP_PASSWORD:-jihwija-playground-rancher}"
 readonly HARBOR_ADMIN_PASSWORD="${JIHWIJA_HARBOR_ADMIN_PASSWORD:-jihwija-playground-harbor}"
+readonly GRAFANA_ADMIN_PASSWORD="${JIHWIJA_GRAFANA_ADMIN_PASSWORD:-jihwija-playground-grafana}"
 
 ROOT_COMMAND=()
 DOCKER_COMMAND=()
@@ -131,6 +133,7 @@ configure_services() {
     controller jihwija set hostname harbor "$HARBOR_HOSTNAME" --no-redeploy
     controller jihwija set hostname portainer "$PORTAINER_HOSTNAME" --no-redeploy
     controller jihwija set hostname argo "$ARGO_HOSTNAME" --no-redeploy
+    controller jihwija set hostname grafana "$GRAFANA_HOSTNAME" --no-redeploy
 
     printf '%s' "$RANCHER_BOOTSTRAP_PASSWORD" | \
         compose exec --no-TTY controller \
@@ -138,6 +141,9 @@ configure_services() {
     printf '%s' "$HARBOR_ADMIN_PASSWORD" | \
         compose exec --no-TTY controller \
             jihwija set secret HARBOR_ADMIN_PASSWORD --stdin
+    printf '%s' "$GRAFANA_ADMIN_PASSWORD" | \
+        compose exec --no-TTY controller \
+            jihwija set secret GRAFANA_ADMIN_PASSWORD --stdin
 }
 
 print_playground_details() {
@@ -154,6 +160,9 @@ The Jihwija playground is running.
   Portainer: https://${PORTAINER_HOSTNAME}
              create the initial administrator in the browser
   Argo:      https://${ARGO_HOSTNAME}
+  Grafana:   https://${GRAFANA_HOSTNAME}
+             username: admin
+             password: ${GRAFANA_ADMIN_PASSWORD}
 
 Rancher and Portainer API keys are intentionally not configured. Create them
 through their web interfaces if you want to exercise user-management commands.

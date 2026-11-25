@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import base64
 import importlib
 import importlib.util
 import io
@@ -121,6 +122,32 @@ class EnvironmentTests(unittest.TestCase):
 
 
 class ServiceManagementTests(unittest.TestCase):
+    def test_observability_services_are_default_enabled_and_independent(self):
+        path = ROOT / "jihwija-services" / "kustomization.yaml"
+        expected = ["loki", "mimir", "grafana", "alloy"]
+        enabled = service_management.enabled_services(path)
+        self.assertTrue(all(service in enabled for service in expected))
+
+        with tempfile.TemporaryDirectory() as directory:
+            copy = Path(directory) / "kustomization.yaml"
+            copy.write_text(path.read_text())
+            for service in expected:
+                self.assertTrue(
+                    service_management.set_service_enabled(service, False, copy)
+                )
+                remaining = service_management.enabled_services(copy)
+                self.assertNotIn(service, remaining)
+                self.assertTrue(
+                    all(other in remaining for other in expected if other != service)
+                )
+                self.assertTrue(
+                    service_management.set_service_enabled(service, True, copy)
+                )
+
+            resources = yaml.safe_load(copy.read_text())["resources"]
+            positions = [resources.index(f"{service}.yaml") for service in expected]
+            self.assertEqual(positions, sorted(positions))
+
     def test_service_state_is_stored_in_kustomization_resources(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "kustomization.yaml"
@@ -528,6 +555,229 @@ class RepositoryTests(unittest.TestCase):
     def test_service_manifests_parse(self):
         for path in (ROOT / "jihwija-services").glob("*.yaml"):
             list(yaml.safe_load_all(path.read_text()))
+
+    def test_observability_manifests_have_one_labeled_helmchart_each(self):
+        for service in ("loki", "grafana", "mimir", "alloy"):
+            documents = [
+                item
+                for item in yaml.safe_load_all(
+                    (ROOT / "jihwija-services" / f"{service}.yaml").read_text()
+                )
+                if item
+            ]
+            charts = [item for item in documents if item["kind"] == "HelmChart"]
+            self.assertEqual(len(charts), 1, service)
+            self.assertEqual(charts[0]["metadata"]["name"], service)
+            self.assertEqual(charts[0]["metadata"]["namespace"], "kube-system")
+            self.assertEqual(charts[0]["spec"]["targetNamespace"], "jihwija-system")
+            for item in documents:
+                self.assertEqual(
+                    item["metadata"]["labels"]["jihwija.io/service"], service
+                )
+
+    def test_observability_pull_only_configuration(self):
+        directory = ROOT / "jihwija-services"
+        text = "\n".join(
+            (directory / f"{service}.yaml").read_text()
+            for service in ("loki", "grafana", "mimir", "alloy")
+        )
+        self.assertNotIn("tempo", text.lower())
+        self.assertNotIn("4317", text)
+        self.assertNotIn("4318", text)
+        alloy = yaml.safe_load((directory / "alloy.yaml").read_text())
+        values = yaml.safe_load(alloy["spec"]["valuesContent"])
+        for feature in (
+            "applicationObservability",
+            "autoInstrumentation",
+            "prometheusMetricsReceiver",
+            "lokiLogsReceiver",
+            "podLogsViaOpenTelemetry",
+            "nodeLogs",
+        ):
+            self.assertFalse(values[feature]["enabled"], feature)
+        self.assertEqual(values["collectors"]["logs"]["presets"][0], "filesystem-log-reader")
+        self.assertIn("daemonset", values["collectors"]["nodes"]["presets"])
+        self.assertEqual(
+            values["collectors"]["logs"]["controller"]["tolerations"],
+            [{"operator": "Exists"}],
+        )
+
+    def test_grafana_dashboards_and_datasources_are_stable(self):
+        documents = [
+            item
+            for item in yaml.safe_load_all(
+                (ROOT / "jihwija-services" / "grafana.yaml").read_text()
+            )
+            if item
+        ]
+        self.assertFalse(any(item["kind"] == "ConfigMap" for item in documents))
+
+        dashboard_directory = ROOT / "grafana"
+        dashboard_files = sorted(dashboard_directory.glob("*.json"))
+        self.assertEqual(len(dashboard_files), 4)
+        dashboard_uids = {
+            __import__("json").loads(path.read_text())["uid"]
+            for path in dashboard_files
+        }
+        self.assertEqual(
+            dashboard_uids,
+            {
+                "jihwija-cluster-health",
+                "jihwija-logs-events",
+                "jihwija-resource-utilization",
+                "jihwija-workloads",
+            },
+        )
+
+        chart = next(item for item in documents if item["kind"] == "HelmChart")
+        values = yaml.safe_load(chart["spec"]["valuesContent"])
+        datasources = values["datasources"]["datasources.yaml"]["datasources"]
+        self.assertEqual(
+            {source["uid"] for source in datasources},
+            {"jihwija-loki", "jihwija-mimir"},
+        )
+        self.assertIn("${GRAFANA_HOSTNAME}", chart["spec"]["valuesContent"])
+        manifest = (ROOT / "jihwija-services" / "grafana.yaml").read_text()
+        self.assertIn("${GRAFANA_ADMIN_PASSWORD_B64}", manifest)
+        self.assertNotIn("jihwija-test-grafana", manifest)
+
+        sys.modules["lib"] = lib_package
+        with mock.patch.dict(
+            os.environ,
+            {"JIHWIJA_ENV_FILE": str(ROOT / "tests" / "test-env" / "jihwija.env")},
+        ):
+            module = runpy.run_path(
+                str(PLUMBING / "deploy-services.py"),
+                run_name="_test_grafana_dashboards",
+            )
+        configmaps = module["grafana_dashboard_configmaps"](dashboard_directory)
+        self.assertEqual(len(configmaps), 4)
+        for configmap, path in zip(configmaps, dashboard_files):
+            self.assertEqual(configmap["metadata"]["namespace"], "jihwija-system")
+            self.assertEqual(
+                configmap["metadata"]["labels"],
+                {
+                    "app.kubernetes.io/part-of": "jihwija",
+                    "jihwija.io/service": "grafana",
+                    "grafana_dashboard": "1",
+                },
+            )
+            self.assertEqual(configmap["data"], {path.name: path.read_text()})
+
+    def test_observability_storage_retention_and_placement(self):
+        services = ROOT / "jihwija-services"
+        loki_chart = next(
+            item for item in yaml.safe_load_all((services / "loki.yaml").read_text())
+            if item and item["kind"] == "HelmChart"
+        )
+        loki = yaml.safe_load(loki_chart["spec"]["valuesContent"])
+        self.assertEqual(loki["singleBinary"]["persistence"]["size"], "11Gi")
+        self.assertEqual(loki["loki"]["limits_config"]["retention_period"], "168h")
+        self.assertEqual(
+            loki["singleBinary"]["nodeSelector"],
+            {"jihwija-services": "true"},
+        )
+
+        grafana_chart = next(
+            item for item in yaml.safe_load_all((services / "grafana.yaml").read_text())
+            if item and item["kind"] == "HelmChart"
+        )
+        grafana = yaml.safe_load(grafana_chart["spec"]["valuesContent"])
+        self.assertEqual(grafana["persistence"]["size"], "1Gi")
+        self.assertEqual(grafana["nodeSelector"], {"jihwija-services": "true"})
+
+        mimir_chart = next(
+            item for item in yaml.safe_load_all((services / "mimir.yaml").read_text())
+            if item and item["kind"] == "HelmChart"
+        )
+        self.assertEqual(mimir_chart["spec"]["chart"], "mimir-distributed")
+        self.assertEqual(
+            mimir_chart["spec"]["repo"],
+            "https://grafana.github.io/helm-charts",
+        )
+        self.assertEqual(mimir_chart["spec"]["version"], "6.2.2")
+        self.assertNotIn("chartContent", mimir_chart["spec"])
+        self.assertFalse((services / "charts").exists())
+        self.assertNotIn(
+            "MIMIR_CHART_CONTENT",
+            (PLUMBING / "deploy-services.py").read_text(),
+        )
+        mimir = yaml.safe_load(mimir_chart["spec"]["valuesContent"])
+        self.assertEqual(
+            mimir["mimir"]["structuredConfig"]["limits"]
+            ["compactor_blocks_retention_period"],
+            "336h",
+        )
+        self.assertEqual(mimir["minio"]["persistence"]["size"], "8Gi")
+        self.assertEqual(mimir["kafka"]["persistence"]["size"], "1Gi")
+        self.assertEqual(mimir["gateway"]["service"]["nameOverride"], "mimir")
+        self.assertEqual(mimir["gateway"]["service"]["port"], 9009)
+        for component in (
+            "distributor",
+            "ingester",
+            "querier",
+            "query_frontend",
+            "query_scheduler",
+            "store_gateway",
+            "compactor",
+            "gateway",
+            "minio",
+            "kafka",
+        ):
+            self.assertEqual(
+                mimir[component]["nodeSelector"],
+                {"jihwija-services": "true"},
+                component,
+            )
+        for component in (
+            "distributor",
+            "ingester",
+            "querier",
+            "query_frontend",
+            "query_scheduler",
+            "store_gateway",
+            "compactor",
+            "gateway",
+            "kafka",
+        ):
+            self.assertEqual(mimir[component]["replicas"], 1, component)
+        self.assertFalse(mimir["ingester"]["zoneAwareReplication"]["enabled"])
+        self.assertFalse(mimir["store_gateway"]["zoneAwareReplication"]["enabled"])
+
+        mimir_policy = next(
+            item for item in yaml.safe_load_all((services / "mimir.yaml").read_text())
+            if item and item["kind"] == "NetworkPolicy"
+        )
+        self.assertEqual(
+            mimir_policy["spec"]["podSelector"]["matchLabels"],
+            {"jihwija.io/service": "mimir"},
+        )
+        self.assertEqual(mimir_policy["spec"]["ingress"][1]["ports"][0]["port"], 8080)
+
+    def test_grafana_password_rendering_is_encoded(self):
+        sys.modules["lib"] = lib_package
+        password = "a secret that must not appear"
+        with mock.patch.dict(
+            os.environ,
+            {
+                "JIHWIJA_ENV_FILE": str(ROOT / "tests" / "test-env" / "jihwija.env"),
+                "GRAFANA_ADMIN_PASSWORD": password,
+            },
+        ):
+            module = runpy.run_path(
+                str(PLUMBING / "deploy-services.py"),
+                run_name="_test_grafana_secret_rendering",
+            )
+            # The configured test environment is loaded without overwriting an
+            # explicitly supplied process value.
+            rendered = module["configured_values"](
+                {"GRAFANA_ADMIN_PASSWORD_B64"}
+            )
+        self.assertNotIn(password, repr(rendered))
+        self.assertEqual(
+            base64.b64decode(rendered["GRAFANA_ADMIN_PASSWORD_B64"]).decode(),
+            password,
+        )
 
     def test_argo_server_uses_in_cluster_kubernetes_configuration(self):
         manifest = (ROOT / "jihwija-services" / "argo-workflows.yaml").read_text()

@@ -1,0 +1,40 @@
+{
+  "uid": "jihwija-logs-events",
+  "title": "Jihwija / Pod logs and Kubernetes events",
+  "tags": ["jihwija", "kubernetes", "logs"],
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "logs",
+      "title": "Pod and container logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "jihwija-loki"
+      },
+      "targets": [
+        {
+          "expr": "{namespace=~\".+\"}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 0}
+    },
+    {
+      "type": "logs",
+      "title": "Kubernetes events",
+      "datasource": {
+        "type": "loki",
+        "uid": "jihwija-loki"
+      },
+      "targets": [
+        {
+          "expr": "{job=~\".*(event|events).*\"}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 12}
+    }
+  ]
+}

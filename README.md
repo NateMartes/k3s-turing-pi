@@ -20,7 +20,7 @@ Jihwija provides:
 
 - **Single-Server K3s Provisioning:** Automated deployment and lifecycle management via native Ansible playbooks.
 - **Node Management:** Safe worker-node addition, validation, cordoning, draining, and removal.
-- **Turnkey Platform Services:** Integrated deployment of Rancher, Harbor registry, Portainer, Argo Workflows, cert-manager, and NVIDIA GPU device plugin.
+- **Turnkey Platform Services:** Integrated deployment of Rancher, Harbor registry, Portainer, Argo Workflows, cert-manager, NVIDIA GPU support, and a Loki/Grafana/Mimir/Alloy observability stack.
 - **Service Certificate Trust:** Automatic cluster-wide distribution of TLS certificates and private CAs to OS trust stores, Chromium policies, and containerd registries.
 - **Multi-Tenant User Isolation:** Unified user provisioning across Linux, filesystem quotas, rootless Docker daemons, Portainer Agent endpoints, K3s namespaces with ResourceQuotas, Argo Workflows runners, Harbor registry projects, and Rancher projects.
 
@@ -38,9 +38,10 @@ Comprehensive operational and architecture guides are available in [`docs/`](doc
 | **[CLI Command Reference](docs/CLI_REFERENCE.md)** | Complete mapping from the Jihwija CLI to its native playbooks and plumbing scripts. |
 | **[Cluster Setup Guide](docs/SETUP.md)** | Step-by-step walkthrough for cluster initialization, K3s provisioning, service deployment, and node management via the Jihwija CLI or manual native pipelines. |
 | **[User Setup Guide](docs/SETUP_USERS.md)** | Dedicated guide for multi-tenant user provisioning, filesystem/K3s quotas, password updates, and service integrations. |
-| **[Web UI Tunneling](docs/TUNNELING.md)** | Instructions for accessing cluster dashboards (Rancher, Harbor, Portainer, Argo) from remote workstations via SOCKS5 proxy. |
+| **[Web UI Tunneling](docs/TUNNELING.md)** | Instructions for accessing cluster dashboards (Rancher, Harbor, Portainer, Argo, Grafana) from remote workstations via SOCKS5 proxy. |
 | **[Deploying an Argo Workflow](docs/DEPLOYING_ARGO_WORKFLOW.md)** | Guide to running batch tasks, ML workflows, and containerized pipelines with namespace runners. |
 | **[Adding a New Service](docs/ADD_NEW_SERVICE.md)** | Maintainer guide for registering, configuring, testing, and operating a Helm-managed Jihwija service. |
+| **[Observability Stack](docs/OBSERVABILITY.md)** | Architecture and operation of the Loki, Grafana, Mimir, and Alloy services. |
 | **[Adding a New Node](docs/ADDING_A_NEW_NODE.md)** | Hardware and OS preparation for Turing Pi RK1, Raspberry Pi, or generic x86 worker nodes. |
 | **[Adding a Jetson Orin](docs/ADDING_A_JETSON_ORIN.md)** | Preparing NVIDIA Jetson Orin modules with GPU drivers and container runtimes. |
 

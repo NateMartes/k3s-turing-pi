@@ -14,6 +14,7 @@ MAN7_SOURCES := \
   ADDING_A_NEW_NODE.md \
   ARGO_CLUSTER_ADMINS.md \
   DEPLOYING_ARGO_WORKFLOW.md \
+  OBSERVABILITY.md \
   SETUP.md \
   SETUP_USERS.md \
   TUNNELING.md
@@ -26,6 +27,7 @@ MAN7_PAGES := \
   $(BUILD_DIR)/jihwija-add-node.7 \
   $(BUILD_DIR)/jihwija-argo-template-admin.7 \
   $(BUILD_DIR)/jihwija-argo-workflow.7 \
+  $(BUILD_DIR)/jihwija-observability.7 \
   $(BUILD_DIR)/jihwija-setup.7 \
   $(BUILD_DIR)/jihwija-users.7 \
   $(BUILD_DIR)/jihwija-tunneling.7
@@ -60,6 +62,7 @@ $(eval $(call build_man_page,jihwija-add-jetson,7,ADDING_A_JETSON_ORIN.md))
 $(eval $(call build_man_page,jihwija-add-node,7,ADDING_A_NEW_NODE.md))
 $(eval $(call build_man_page,jihwija-argo-template-admin,7,ARGO_CLUSTER_ADMINS.md))
 $(eval $(call build_man_page,jihwija-argo-workflow,7,DEPLOYING_ARGO_WORKFLOW.md))
+$(eval $(call build_man_page,jihwija-observability,7,OBSERVABILITY.md))
 $(eval $(call build_man_page,jihwija-setup,7,SETUP.md))
 $(eval $(call build_man_page,jihwija-users,7,SETUP_USERS.md))
 $(eval $(call build_man_page,jihwija-tunneling,7,TUNNELING.md))

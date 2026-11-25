@@ -1,0 +1,108 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: loki
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: loki
+spec:
+  chart: loki
+  repo: https://grafana-community.github.io/helm-charts
+  version: 21.4.3
+  targetNamespace: jihwija-system
+  createNamespace: false
+  timeout: 15m
+  backOffLimit: 20
+  valuesContent: |-
+    deploymentMode: SingleBinary
+
+    loki:
+      auth_enabled: false
+      commonConfig:
+        replication_factor: 1
+      schemaConfig:
+        configs:
+          - from: "2024-04-01"
+            store: tsdb
+            object_store: filesystem
+            schema: v13
+            index:
+              prefix: loki_index_
+              period: 24h
+      storage:
+        type: filesystem
+        bucketNames:
+          chunks: chunks
+          ruler: ruler
+          admin: admin
+      limits_config:
+        retention_period: 168h
+      compactor:
+        retention_enabled: true
+        delete_request_store: filesystem
+
+    singleBinary:
+      replicas: 1
+      nodeSelector:
+        jihwija-services: "true"
+      persistence:
+        enabled: true
+        storageClass: local-path
+        size: 11Gi
+        annotations:
+          helm.sh/resource-policy: keep
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: "2"
+          memory: 2Gi
+      podLabels:
+        app.kubernetes.io/part-of: jihwija
+        jihwija.io/service: loki
+
+    read:
+      replicas: 0
+    write:
+      replicas: 0
+    backend:
+      replicas: 0
+    gateway:
+      enabled: false
+    lokiCanary:
+      enabled: false
+    chunksCache:
+      enabled: false
+    resultsCache:
+      enabled: false
+    test:
+      enabled: false
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loki-ingress
+  namespace: jihwija-system
+  labels:
+    app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: loki
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+      app.kubernetes.io/instance: loki
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              jihwija.io/service: alloy
+        - podSelector:
+            matchLabels:
+              jihwija.io/service: grafana
+      ports:
+        - protocol: TCP
+          port: 3100

@@ -1,0 +1,143 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: alloy
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: alloy
+spec:
+  chart: k8s-monitoring
+  repo: https://grafana.github.io/helm-charts
+  version: 4.5.3
+  targetNamespace: jihwija-system
+  createNamespace: false
+  timeout: 20m
+  backOffLimit: 20
+  valuesContent: |-
+    cluster:
+      name: jihwija
+
+    global:
+      namespaceOverride: jihwija-system
+
+    destinations:
+      loki:
+        type: loki
+        url: http://loki.jihwija-system.svc.cluster.local:3100/loki/api/v1/push
+      mimir:
+        type: prometheus
+        url: http://mimir.jihwija-system.svc.cluster.local:9009/api/v1/push
+
+    clusterMetrics:
+      enabled: true
+      collector: metrics
+
+    hostMetrics:
+      enabled: true
+      collector: nodes
+      linuxHosts:
+        enabled: true
+
+    clusterEvents:
+      enabled: true
+      collector: singleton
+
+    podLogsViaLoki:
+      enabled: true
+      collector: logs
+
+    annotationAutodiscovery:
+      enabled: true
+      collector: metrics
+
+    # Jihwija only pulls Kubernetes telemetry. Keep every push-oriented or
+    # host-wide collection feature disabled, even if an upstream default moves.
+    applicationObservability:
+      enabled: false
+    autoInstrumentation:
+      enabled: false
+    prometheusMetricsReceiver:
+      enabled: false
+    lokiLogsReceiver:
+      enabled: false
+    podLogsViaOpenTelemetry:
+      enabled: false
+    nodeLogs:
+      enabled: false
+    selfReporting:
+      enabled: false
+
+    collectors:
+      metrics:
+        presets:
+          - clustered
+          - statefulset
+          - small
+        controller:
+          nodeSelector:
+            jihwija-services: "true"
+          podLabels:
+            app.kubernetes.io/part-of: jihwija
+            jihwija.io/service: alloy
+      logs:
+        presets:
+          - filesystem-log-reader
+          - daemonset
+          - small
+        controller:
+          tolerations:
+            - operator: Exists
+          podLabels:
+            app.kubernetes.io/part-of: jihwija
+            jihwija.io/service: alloy
+        alloy:
+          mounts:
+            dockercontainers: false
+            varlog: true
+      nodes:
+        presets:
+          - clustered
+          - daemonset
+          - small
+        controller:
+          tolerations:
+            - operator: Exists
+          podLabels:
+            app.kubernetes.io/part-of: jihwija
+            jihwija.io/service: alloy
+      singleton:
+        presets:
+          - singleton
+          - deployment
+          - small
+        controller:
+          nodeSelector:
+            jihwija-services: "true"
+          podLabels:
+            app.kubernetes.io/part-of: jihwija
+            jihwija.io/service: alloy
+
+    telemetryServices:
+      kube-state-metrics:
+        deploy: true
+        nodeSelector:
+          jihwija-services: "true"
+        podLabels:
+          app.kubernetes.io/part-of: jihwija
+          jihwija.io/service: alloy
+      node-exporter:
+        deploy: true
+        tolerations:
+          - operator: Exists
+        podLabels:
+          app.kubernetes.io/part-of: jihwija
+          jihwija.io/service: alloy
+
+    alloy-operator:
+      deploy: true
+      nodeSelector:
+        jihwija-services: "true"
+      podLabels:
+        app.kubernetes.io/part-of: jihwija
+        jihwija.io/service: alloy

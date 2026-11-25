@@ -5,6 +5,7 @@ metadata:
   namespace: kube-system
   labels:
     app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: nvidia
 spec:
   chart: nvidia-device-plugin
   repo: https://nvidia.github.io/k8s-device-plugin

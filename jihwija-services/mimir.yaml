@@ -1,0 +1,239 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: mimir
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: mimir
+spec:
+  chart: mimir-distributed
+  repo: https://grafana.github.io/helm-charts
+  version: 6.2.2
+  targetNamespace: jihwija-system
+  createNamespace: false
+  timeout: 20m
+  backOffLimit: 20
+  valuesContent: |-
+    global:
+      podLabels:
+        app.kubernetes.io/part-of: jihwija
+        jihwija.io/service: mimir
+
+    mimir:
+      structuredConfig:
+        multitenancy_enabled: false
+        usage_stats:
+          enabled: false
+        ingester:
+          ring:
+            replication_factor: 1
+        limits:
+          compactor_blocks_retention_period: 336h
+
+    rollout_operator:
+      enabled: false
+
+    alertmanager:
+      enabled: false
+
+    ruler:
+      enabled: false
+
+    overrides_exporter:
+      enabled: false
+
+    distributor:
+      replicas: 1
+      nodeSelector:
+        jihwija-services: "true"
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
+
+    ingester:
+      replicas: 1
+      nodeSelector:
+        jihwija-services: "true"
+      zoneAwareReplication:
+        enabled: false
+      persistentVolume:
+        storageClass: local-path
+        size: 1Gi
+        annotations:
+          helm.sh/resource-policy: keep
+        enableRetentionPolicy: true
+        whenDeleted: Retain
+        whenScaled: Retain
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          memory: 1Gi
+
+    querier:
+      replicas: 1
+      nodeSelector:
+        jihwija-services: "true"
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+
+    query_frontend:
+      replicas: 1
+      nodeSelector:
+        jihwija-services: "true"
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
+
+    query_scheduler:
+      replicas: 1
+      nodeSelector:
+        jihwija-services: "true"
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
+
+    store_gateway:
+      replicas: 1
+      nodeSelector:
+        jihwija-services: "true"
+      zoneAwareReplication:
+        enabled: false
+      persistentVolume:
+        storageClass: local-path
+        size: 1Gi
+        annotations:
+          helm.sh/resource-policy: keep
+        enableRetentionPolicy: true
+        whenDeleted: Retain
+        whenScaled: Retain
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+
+    compactor:
+      replicas: 1
+      nodeSelector:
+        jihwija-services: "true"
+      persistentVolume:
+        storageClass: local-path
+        size: 1Gi
+        annotations:
+          helm.sh/resource-policy: keep
+        enableRetentionPolicy: true
+        whenDeleted: Retain
+        whenScaled: Retain
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+
+    gateway:
+      replicas: 1
+      nodeSelector:
+        jihwija-services: "true"
+      service:
+        nameOverride: mimir
+        port: 9009
+        legacyPort: null
+      resources:
+        requests:
+          cpu: 25m
+          memory: 32Mi
+        limits:
+          memory: 128Mi
+
+    minio:
+      nodeSelector:
+        jihwija-services: "true"
+      podLabels:
+        app.kubernetes.io/part-of: jihwija
+        jihwija.io/service: mimir
+      deploymentUpdate:
+        type: Recreate
+      persistence:
+        storageClass: local-path
+        size: 8Gi
+        annotations:
+          helm.sh/resource-policy: keep
+      makeBucketJob:
+        nodeSelector:
+          jihwija-services: "true"
+      postJob:
+        nodeSelector:
+          jihwija-services: "true"
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+
+    kafka:
+      replicas: 1
+      nodeSelector:
+        jihwija-services: "true"
+      podLabels:
+        app.kubernetes.io/part-of: jihwija
+        jihwija.io/service: mimir
+      persistence:
+        enabled: true
+        storageClassName: local-path
+        size: 1Gi
+      resources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          memory: 1Gi
+      logRetentionHours: 24
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mimir-ingress
+  namespace: jihwija-system
+  labels:
+    app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: mimir
+spec:
+  podSelector:
+    matchLabels:
+      jihwija.io/service: mimir
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              jihwija.io/service: mimir
+    - from:
+        - podSelector:
+            matchLabels:
+              jihwija.io/service: alloy
+        - podSelector:
+            matchLabels:
+              jihwija.io/service: grafana
+      ports:
+        - protocol: TCP
+          port: 8080

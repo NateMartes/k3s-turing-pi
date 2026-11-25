@@ -236,6 +236,7 @@ delete_test_namespace() {
 
 teardown_service() {
     service=$1
+    preserve_namespace=${2:-0}
     case "$service" in
         cert-manager) chart=cert-manager; namespace=cert-manager ;;
         nvidia) chart=nvidia-device-plugin; namespace=nvidia-device-plugin ;;
@@ -243,6 +244,10 @@ teardown_service() {
         harbor) chart=harbor; namespace=jihwija-system ;;
         portainer) chart=portainer; namespace=jihwija-system ;;
         argo) chart=argo-workflows; namespace=jihwija-system ;;
+        loki) chart=loki; namespace=jihwija-system ;;
+        grafana) chart=grafana; namespace=jihwija-system ;;
+        mimir) chart=mimir; namespace=jihwija-system ;;
+        alloy) chart=alloy; namespace=jihwija-system ;;
         *) die "Unknown service teardown: $service" ;;
     esac
 
@@ -273,11 +278,15 @@ teardown_service() {
         controller k3s kubectl delete helmchart "$chart" -n kube-system \
             --ignore-not-found=true --wait=false
     fi
-    delete_test_namespace "$namespace"
+    if [[ "$preserve_namespace" != 1 ]]; then
+        delete_test_namespace "$namespace"
+    fi
     controller k3s kubectl delete jobs -n kube-system \
         "helm-install-$chart" "helm-delete-$chart" --ignore-not-found=true
     # Sequential CI runs do not need images from services already tested.
-    controller k3s crictl rmi --prune || true
+    if [[ "$preserve_namespace" != 1 ]]; then
+        controller k3s crictl rmi --prune || true
+    fi
 }
 
 verify_nvidia() {
@@ -289,6 +298,105 @@ verify_cert_manager() {
     controller k3s kubectl wait --for=condition=Available deployment --all \
         -n cert-manager --timeout="$SERVICE_TIMEOUT"
     wait_for_no_bad_pods cert-manager
+}
+
+verify_alloy_per_node_collectors() {
+    controller sh -ec '
+        expected=$(k3s kubectl get nodes --no-headers | wc -l)
+        matched=0
+        for daemonset in $(k3s kubectl get daemonsets -n jihwija-system -o name); do
+            desired=$(k3s kubectl get "$daemonset" -n jihwija-system \
+                -o jsonpath="{.status.desiredNumberScheduled}")
+            ready=$(k3s kubectl get "$daemonset" -n jihwija-system \
+                -o jsonpath="{.status.numberReady}")
+            if [ "$desired" = "$expected" ]; then
+                [ "$ready" = "$expected" ]
+                matched=$((matched + 1))
+            fi
+        done
+        # Log collector, host-metrics collector, and Node Exporter.
+        [ "$matched" -ge 3 ]
+    '
+    wait_for_no_bad_pods jihwija-system
+}
+
+verify_observability_data_path() {
+    marker="jihwija-log-marker-$(date +%s)"
+    log "Generating and querying observability telemetry"
+    controller k3s kubectl run telemetry-marker -n jihwija-system \
+        --image=busybox:1.37 --restart=Never --command -- sh -c \
+        "echo $marker"
+    controller k3s kubectl wait --for=jsonpath='{.status.phase}'=Succeeded \
+        pod/telemetry-marker -n jihwija-system --timeout=5m
+
+    controller k3s kubectl run observability-probe -n jihwija-system \
+        --image=curlimages/curl:8.16.0 --restart=Never \
+        --labels=jihwija.io/service=grafana --command -- sleep 3600
+    controller k3s kubectl wait --for=condition=Ready pod/observability-probe \
+        -n jihwija-system --timeout=5m
+
+    controller sh -ec '
+        marker=$1
+        attempt=0
+        while [ "$attempt" -lt 36 ]; do
+            if k3s kubectl exec -n jihwija-system observability-probe -- \
+                curl --fail --silent --get \
+                --data-urlencode "query={namespace=\"jihwija-system\"} |= \"$marker\"" \
+                http://loki:3100/loki/api/v1/query_range | grep -q "$marker"; then
+                exit 0
+            fi
+            attempt=$((attempt + 1))
+            sleep 5
+        done
+        exit 1
+    ' sh "$marker"
+
+    controller sh -ec '
+        attempt=0
+        while [ "$attempt" -lt 36 ]; do
+            if k3s kubectl exec -n jihwija-system observability-probe -- \
+                curl --fail --silent --get --data-urlencode "query=up" \
+                http://mimir:9009/prometheus/api/v1/query | grep -q '"'"'"status":"success"'"'"'; then
+                exit 0
+            fi
+            attempt=$((attempt + 1))
+            sleep 5
+        done
+        exit 1
+    '
+
+    controller k3s kubectl run denied-observability-probe -n jihwija-system \
+        --image=curlimages/curl:8.16.0 --restart=Never --command -- sleep 3600
+    controller k3s kubectl wait --for=condition=Ready pod/denied-observability-probe \
+        -n jihwija-system --timeout=5m
+    if controller k3s kubectl exec -n jihwija-system denied-observability-probe -- \
+        curl --silent --connect-timeout 3 http://loki:3100/ready; then
+        die "An unrelated Pod reached Loki through its NetworkPolicy."
+    fi
+    if controller k3s kubectl exec -n jihwija-system denied-observability-probe -- \
+        curl --silent --connect-timeout 3 http://mimir:9009/ready; then
+        die "An unrelated Pod reached Mimir through its NetworkPolicy."
+    fi
+}
+
+verify_alloy_retries_and_stays_ready() {
+    backend=$1
+    controller k3s kubectl rollout status daemonset --all \
+        -n jihwija-system --timeout="$SERVICE_TIMEOUT"
+    controller sh -ec '
+        backend=$1
+        attempt=0
+        while [ "$attempt" -lt 24 ]; do
+            if k3s kubectl logs -n jihwija-system \
+                -l jihwija.io/service=alloy --all-containers --since=5m \
+                2>/dev/null | grep -Eiq "$backend.*(error|failed|retry|refused|no such host)|(error|failed|retry|refused|no such host).*$backend"; then
+                exit 0
+            fi
+            attempt=$((attempt + 1))
+            sleep 5
+        done
+        exit 1
+    ' sh "$backend"
 }
 
 main() {
@@ -376,6 +484,49 @@ main() {
     deploy_service argo
     curl_service "Argo Workflows" argo.172.31.42.10.sslip.io / '<html|<!doctype'
     teardown_service argo
+
+    deploy_service loki
+    controller k3s kubectl get service/loki -n jihwija-system
+    teardown_service loki
+
+    deploy_service mimir
+    controller k3s kubectl get service/mimir -n jihwija-system
+    teardown_service mimir
+
+    deploy_service grafana
+    curl_service Grafana grafana.172.31.42.10.sslip.io /api/health '"database"[[:space:]]*:[[:space:]]*"ok"'
+    teardown_service grafana
+
+    deploy_service alloy
+    verify_alloy_per_node_collectors
+    verify_alloy_retries_and_stays_ready loki
+    verify_alloy_retries_and_stays_ready mimir
+    teardown_service alloy
+
+    # Exercise the complete telemetry path after proving that each service can
+    # be installed and removed on its own.
+    deploy_service loki
+    deploy_service mimir
+    deploy_service grafana
+    deploy_service alloy
+    verify_alloy_per_node_collectors
+    verify_observability_data_path
+    curl_service Grafana grafana.172.31.42.10.sslip.io /api/health '"database"[[:space:]]*:[[:space:]]*"ok"'
+    controller sh -ec '
+        password=$1
+        curl --fail --silent --insecure --user "admin:$password" \
+            --resolve grafana.172.31.42.10.sslip.io:443:172.31.42.10 \
+            https://grafana.172.31.42.10.sslip.io/api/search | \
+            grep -q jihwija-cluster-health
+    ' sh jihwija-test-grafana
+
+    teardown_service loki 1
+    verify_alloy_retries_and_stays_ready loki
+    teardown_service mimir 1
+    verify_alloy_retries_and_stays_ready mimir
+    teardown_service alloy 1
+    teardown_service grafana 1
+    delete_test_namespace jihwija-system
 
     teardown_service cert-manager
     log "All container-based Jihwija integration tests passed"

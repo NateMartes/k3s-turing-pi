@@ -1,0 +1,90 @@
+{
+  "uid": "jihwija-resource-utilization",
+  "title": "Jihwija / Resource utilization",
+  "tags": ["jihwija", "kubernetes"],
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Node CPU used",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "jihwija-mimir"
+      },
+      "targets": [
+        {
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Node memory used",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "jihwija-mimir"
+      },
+      "targets": [
+        {
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Pod CPU",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "jihwija-mimir"
+      },
+      "targets": [
+        {
+          "expr": "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\"}[5m]))",
+          "legendFormat": "{{namespace}}/{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "Network throughput",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "jihwija-mimir"
+      },
+      "targets": [
+        {
+          "expr": "sum by (instance) (rate(node_network_receive_bytes_total{device!=\"lo\"}[5m]) + rate(node_network_transmit_bytes_total{device!=\"lo\"}[5m]))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "Filesystem used",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "jihwija-mimir"
+      },
+      "targets": [
+        {
+          "expr": "100 * (1 - node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay\"})",
+          "legendFormat": "{{instance}} {{mountpoint}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}
+    }
+  ]
+}

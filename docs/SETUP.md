@@ -14,7 +14,7 @@ This guide provides complete instructions for setting up and operating the Turin
 1. **Option A: Guided Automated Setup (Jihwija CLI)** — A streamlined CLI overlay (`jihwija`) that handles validation, inventory generation, credential storage, deployment, and user provisioning.
 2. **Option B: Manual Native Setup (The "OG" Pipeline)** — The original, direct operational workflow running Ansible playbooks, plumbing scripts, and Kubernetes manifests step-by-step.
 
-Both approaches configure the identical underlying infrastructure: a native single-server K3s cluster, Traefik ingress, Rancher, Harbor registry, Portainer, Argo Workflows, cert-manager, NVIDIA GPU support, and multi-tenant user isolation.
+Both approaches configure the identical underlying infrastructure: a native single-server K3s cluster, Traefik ingress, Rancher, Harbor registry, Portainer, Argo Workflows, cert-manager, NVIDIA GPU support, Loki/Grafana/Mimir/Alloy observability, and multi-tenant user isolation.
 
 ---
 
@@ -89,9 +89,11 @@ sudo jihwija set hostname rancher rancher.10.42.0.31.sslip.io
 sudo jihwija set hostname harbor harbor.10.42.0.31.sslip.io
 sudo jihwija set hostname portainer portainer.10.42.0.31.sslip.io
 sudo jihwija set hostname argo argo.10.42.0.31.sslip.io
+sudo jihwija set hostname grafana grafana.10.42.0.31.sslip.io
 
 sudo jihwija set secret RANCHER_BOOTSTRAP_PASSWORD
 sudo jihwija set secret HARBOR_ADMIN_PASSWORD
+sudo jihwija set secret GRAFANA_ADMIN_PASSWORD
 ```
 
 ### 4. Install and Provision K3s
@@ -111,7 +113,7 @@ worker-01  Ready    <none>                 90s   v1.36.1+k3s1
 
 ### 5. Deploy Cluster Services
 
-Deploy Rancher, Harbor, Portainer, Argo Workflows, cert-manager, and the NVIDIA device plugin:
+Deploy the default service bundle, including Loki, Grafana, Mimir, Alloy, and the existing platform services:
 
 ```bash
 sudo jihwija deploy
@@ -150,6 +152,7 @@ If your local computer cannot reach the cluster network directly, follow [docs/T
    ```bash
    sudo jihwija set secret RANCHER_TOKEN
    ```
+4. **Grafana:** Browse to the configured `GRAFANA_HOSTNAME` and log in as `admin` using `GRAFANA_ADMIN_PASSWORD`. The Loki and Mimir datasources and four Jihwija dashboards are provisioned automatically. See [Observability Stack](OBSERVABILITY.md) for collection and retention details.
 
 ### 8. Manage Worker Nodes
 
@@ -325,23 +328,25 @@ k3s kubectl get nodes -o wide
    export HARBOR_HOSTNAME="harbor.10.42.0.31.sslip.io"
    export PORTAINER_HOSTNAME="portainer.10.42.0.31.sslip.io"
    export ARGO_HOSTNAME="argo.10.42.0.31.sslip.io"
+   export GRAFANA_HOSTNAME="grafana.10.42.0.31.sslip.io"
 
    export HARBOR_ADMIN_PASSWORD="YourStrongHarborPassword123!"
    export RANCHER_BOOTSTRAP_PASSWORD="YourStrongRancherPassword123!"
+   export GRAFANA_ADMIN_PASSWORD="YourStrongGrafanaPassword123!"
    ```
 
 ### 7. Deploy Cluster Services
 
-Deploy cert-manager, Harbor, Rancher, Portainer, and Argo Workflows:
+Deploy the complete default service bundle, including Loki, Grafana, Mimir,
+and Alloy:
 
 ```bash
 sudo ./scripts/plumbing-scripts/deploy-services.py
 ```
 
-Alternatively, to render and apply via standard `kubectl` without the script:
-```bash
-k3s kubectl kustomize jihwija-services | k3s kubectl apply -f -
-```
+Use the deployment script rather than applying the Kustomize output directly.
+It securely renders service credentials and hostnames before sending the
+manifests to Kubernetes.
 
 ### 8. Distribute Certificate Trust
 
@@ -364,6 +369,7 @@ This configures containerd registry trust on every worker node so containerd can
    ```bash
    export RANCHER_TOKEN="token-..."
    ```
+4. **Grafana:** Open `https://<GRAFANA_HOSTNAME>` and log in as `admin` with `GRAFANA_ADMIN_PASSWORD`.
 
 ### 10. Worker Node Management (Native Plumbing Scripts)
 

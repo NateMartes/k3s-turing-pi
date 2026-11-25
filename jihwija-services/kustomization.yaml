@@ -9,3 +9,7 @@ resources:
   - rancher.yaml
   - harbor.yaml
   - portainer.yaml
+  - loki.yaml
+  - mimir.yaml
+  - grafana.yaml
+  - alloy.yaml

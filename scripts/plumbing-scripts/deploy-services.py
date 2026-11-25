@@ -17,7 +17,14 @@ import yaml
 from lib.config_env import JIHWIJA_ENV, load_jihwija_env_or_exit
 from lib.service_management import CHART_NAMES, enabled_services
 
-HOSTNAME_VARIABLES = ("RANCHER_HOSTNAME", "HARBOR_HOSTNAME", "PORTAINER_HOSTNAME", "ARGO_HOSTNAME")
+HOSTNAME_VARIABLES = (
+    "RANCHER_HOSTNAME",
+    "HARBOR_HOSTNAME",
+    "PORTAINER_HOSTNAME",
+    "ARGO_HOSTNAME",
+    "GRAFANA_HOSTNAME",
+)
+SERVICE_LABEL = "jihwija.io/service"
 WORKLOAD_SELECTORS = {
     "cert-manager": ("cert-manager", "app.kubernetes.io/instance=cert-manager"),
     "nvidia": ("nvidia-device-plugin", "app.kubernetes.io/instance=nvidia-device-plugin"),
@@ -25,7 +32,12 @@ WORKLOAD_SELECTORS = {
     "harbor": ("jihwija-system", "app.kubernetes.io/instance=harbor"),
     "portainer": ("jihwija-system", "app.kubernetes.io/instance=portainer"),
     "argo": ("jihwija-system", "app.kubernetes.io/instance=argo-workflows"),
+    "loki": ("jihwija-system", "jihwija.io/service=loki"),
+    "mimir": ("jihwija-system", "app.kubernetes.io/instance=mimir"),
+    "grafana": ("jihwija-system", "jihwija.io/service=grafana"),
+    "alloy": ("jihwija-system", "jihwija.io/service=alloy"),
 }
+WORKLOAD_MIN_COUNTS = {"alloy": 7, "mimir": 9}
 load_jihwija_env_or_exit()
 
 
@@ -72,11 +84,63 @@ def configured_values(required: set[str] | None = None) -> dict[str, str]:
         if not harbor or "\n" in harbor or "\r" in harbor:
             die("HARBOR_ADMIN_PASSWORD must be set and contain no newline.")
         values["HARBOR_ADMIN_PASSWORD_B64"] = base64.b64encode(harbor.encode()).decode()
+    if required is None or "GRAFANA_ADMIN_PASSWORD_B64" in required:
+        grafana = os.environ.get("GRAFANA_ADMIN_PASSWORD", "")
+        if not grafana or "\n" in grafana or "\r" in grafana:
+            die("GRAFANA_ADMIN_PASSWORD must be set and contain no newline.")
+        values["GRAFANA_ADMIN_PASSWORD_B64"] = base64.b64encode(grafana.encode()).decode()
     return values
 
 
+def grafana_dashboard_configmaps(directory: Path) -> list[dict]:
+    """Load repository dashboards and expose each one through a ConfigMap."""
+    try:
+        paths = sorted(directory.glob("*.json"))
+    except OSError as exc:
+        die(f"Could not list Grafana dashboards in {directory}: {exc}")
+    if not paths:
+        die(f"No Grafana dashboard JSON files were found in {directory}.")
+
+    configmaps = []
+    dashboard_uids: set[str] = set()
+    for path in paths:
+        if not path.is_file() or path.is_symlink():
+            die(f"Grafana dashboard is not a regular file: {path}")
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", path.stem):
+            die(f"Grafana dashboard filename must use lowercase kebab-case: {path.name}")
+        try:
+            source = path.read_text()
+            dashboard = json.loads(source)
+        except (OSError, json.JSONDecodeError) as exc:
+            die(f"Could not load Grafana dashboard {path}: {exc}")
+        uid = dashboard.get("uid") if isinstance(dashboard, dict) else None
+        if not isinstance(uid, str) or not uid:
+            die(f"Grafana dashboard {path} must contain a non-empty string uid.")
+        if uid in dashboard_uids:
+            die(f"Grafana dashboard uid is duplicated: {uid}")
+        dashboard_uids.add(uid)
+        configmaps.append(
+            {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "metadata": {
+                    "name": f"grafana-dashboard-{path.stem}",
+                    "namespace": "jihwija-system",
+                    "labels": {
+                        "app.kubernetes.io/part-of": "jihwija",
+                        SERVICE_LABEL: "grafana",
+                        "grafana_dashboard": "1",
+                    },
+                },
+                "data": {path.name: source},
+            }
+        )
+    return configmaps
+
+
 def render(service: str | None) -> str:
-    services = Path(__file__).resolve().parents[2] / "jihwija-services"
+    project = Path(__file__).resolve().parents[2]
+    services = project / "jihwija-services"
     if service == "nvidia":
         # GPU discovery is cluster infrastructure and has no dependency on
         # service hostnames or credentials, so K3s installation can bootstrap
@@ -88,6 +152,7 @@ def render(service: str | None) -> str:
         *HOSTNAME_VARIABLES,
         "RANCHER_BOOTSTRAP_PASSWORD_JSON",
         "HARBOR_ADMIN_PASSWORD_B64",
+        "GRAFANA_ADMIN_PASSWORD_B64",
     }
     required = {
         variable
@@ -99,6 +164,17 @@ def render(service: str | None) -> str:
         rendered = rendered.replace(placeholder, value)
     if "${" in rendered:
         die("The rendered manifests contain an unresolved environment placeholder.")
+    documents = [document for document in yaml.safe_load_all(rendered) if document]
+    if any(
+        document.get("kind") == "HelmChart"
+        and document.get("metadata", {}).get("name") == "grafana"
+        for document in documents
+    ):
+        dashboards = grafana_dashboard_configmaps(project / "grafana")
+        rendered = rendered.rstrip() + "\n---\n" + "---\n".join(
+            yaml.safe_dump(dashboard, sort_keys=False).rstrip() + "\n"
+            for dashboard in dashboards
+        )
     if not service:
         return rendered
     chart = CHART_NAMES[service]
@@ -107,11 +183,13 @@ def render(service: str | None) -> str:
         if not document:
             continue
         kind = document.get("kind")
-        name = document.get("metadata", {}).get("name")
+        metadata = document.get("metadata", {})
+        name = metadata.get("name")
+        labels = metadata.get("labels", {})
         if (kind == "Namespace" and name == "jihwija-system") or (
             kind == "HelmChart" and name == chart
         ) or (
-            service == "harbor" and kind == "Secret" and name == "harbor-admin-password"
+            labels.get(SERVICE_LABEL) == service
         ):
             selected.append(document)
     if not selected:
@@ -163,13 +241,17 @@ def wait_for_workloads(service: str | None, timeout: str) -> None:
     deadline = time.monotonic() + parse_duration(timeout)
     for name, (namespace, selector) in selected_workloads(service).items():
         resources: list[str] = []
+        minimum = WORKLOAD_MIN_COUNTS.get(name, 1)
         while time.monotonic() < deadline:
             resources = find_workloads(namespace, selector)
-            if resources:
+            if len(resources) >= minimum:
                 break
             time.sleep(5)
-        if not resources:
-            die(f"No {name} workloads appeared before timeout.")
+        if len(resources) < minimum:
+            die(
+                f"Only {len(resources)} of {minimum} expected {name} workloads "
+                "appeared before timeout."
+            )
         for resource in resources:
             command(["rollout", "status", resource, "-n", namespace, f"--timeout={timeout}"], check=True)
 
@@ -204,7 +286,13 @@ def main() -> None:
         subprocess.run([str(Path(__file__).resolve().parent / "trust-k3s-certs.py")], check=True)
     if args.service == "nvidia":
         return
-    variables = {"rancher": "RANCHER_HOSTNAME", "harbor": "HARBOR_HOSTNAME", "portainer": "PORTAINER_HOSTNAME", "argo": "ARGO_HOSTNAME"}
+    variables = {
+        "rancher": "RANCHER_HOSTNAME",
+        "harbor": "HARBOR_HOSTNAME",
+        "portainer": "PORTAINER_HOSTNAME",
+        "argo": "ARGO_HOSTNAME",
+        "grafana": "GRAFANA_HOSTNAME",
+    }
     selected = {args.service} if args.service else set(active_services)
     required = {variable for service, variable in variables.items() if service in selected}
     values = configured_values(required)

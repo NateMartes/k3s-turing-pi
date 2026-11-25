@@ -25,6 +25,7 @@ VARIABLES = {
     "harbor": "HARBOR_HOSTNAME",
     "portainer": "PORTAINER_HOSTNAME",
     "argo": "ARGO_HOSTNAME",
+    "grafana": "GRAFANA_HOSTNAME",
 }
 
 

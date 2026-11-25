@@ -14,6 +14,10 @@ SERVICE_MANIFESTS = {
     "rancher": "rancher.yaml",
     "harbor": "harbor.yaml",
     "portainer": "portainer.yaml",
+    "loki": "loki.yaml",
+    "mimir": "mimir.yaml",
+    "grafana": "grafana.yaml",
+    "alloy": "alloy.yaml",
 }
 
 CHART_NAMES = {
@@ -23,6 +27,10 @@ CHART_NAMES = {
     "rancher": "rancher",
     "harbor": "harbor",
     "portainer": "portainer",
+    "loki": "loki",
+    "mimir": "mimir",
+    "grafana": "grafana",
+    "alloy": "alloy",
 }
 
 KUSTOMIZATION_PATH = SERVICES_DIR / "kustomization.yaml"

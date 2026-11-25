@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-admin-credentials
+  namespace: jihwija-system
+  labels:
+    app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: grafana
+type: Opaque
+data:
+  admin-user: YWRtaW4=
+  admin-password: ${GRAFANA_ADMIN_PASSWORD_B64}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: grafana-selfsigned
+  namespace: jihwija-system
+  labels:
+    app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: grafana
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: grafana-tls
+  namespace: jihwija-system
+  labels:
+    app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: grafana
+spec:
+  secretName: grafana-tls
+  dnsNames:
+    - ${GRAFANA_HOSTNAME}
+  issuerRef:
+    apiGroup: cert-manager.io
+    kind: Issuer
+    name: grafana-selfsigned
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-ingress
+  namespace: jihwija-system
+  labels:
+    app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: grafana
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+      app.kubernetes.io/instance: grafana
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: grafana
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: grafana
+spec:
+  chart: grafana
+  repo: https://grafana-community.github.io/helm-charts
+  version: 13.5.0
+  targetNamespace: jihwija-system
+  createNamespace: false
+  timeout: 15m
+  backOffLimit: 20
+  valuesContent: |-
+    replicas: 1
+
+    deploymentStrategy:
+      type: Recreate
+
+    nodeSelector:
+      jihwija-services: "true"
+
+    podLabels:
+      app.kubernetes.io/part-of: jihwija
+      jihwija.io/service: grafana
+
+    admin:
+      existingSecret: grafana-admin-credentials
+      userKey: admin-user
+      passwordKey: admin-password
+
+    persistence:
+      enabled: true
+      storageClassName: local-path
+      accessModes:
+        - ReadWriteOnce
+      size: 1Gi
+      annotations:
+        helm.sh/resource-policy: keep
+
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      annotations:
+        traefik.ingress.kubernetes.io/router.entrypoints: websecure
+        traefik.ingress.kubernetes.io/router.tls: "true"
+      hosts:
+        - ${GRAFANA_HOSTNAME}
+      path: /
+      pathType: Prefix
+      tls:
+        - secretName: grafana-tls
+          hosts:
+            - ${GRAFANA_HOSTNAME}
+
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard
+        labelValue: "1"
+        searchNamespace: jihwija-system
+
+    datasources:
+      datasources.yaml:
+        apiVersion: 1
+        deleteDatasources:
+          - name: Loki
+            orgId: 1
+          - name: Mimir
+            orgId: 1
+        datasources:
+          - name: Loki
+            uid: jihwija-loki
+            type: loki
+            access: proxy
+            url: http://loki.jihwija-system.svc.cluster.local:3100
+            isDefault: false
+            editable: false
+          - name: Mimir
+            uid: jihwija-mimir
+            type: prometheus
+            access: proxy
+            url: http://mimir.jihwija-system.svc.cluster.local:9009/prometheus
+            isDefault: true
+            editable: false

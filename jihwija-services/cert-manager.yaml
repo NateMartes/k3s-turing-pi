@@ -5,6 +5,7 @@ metadata:
   namespace: kube-system
   labels:
     app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: cert-manager
 spec:
   chart: cert-manager
   repo: https://charts.jetstack.io

@@ -5,6 +5,7 @@ metadata:
   namespace: kube-system
   labels:
     app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: rancher
 spec:
   chart: rancher
   repo: https://releases.rancher.com/server-charts/stable

@@ -4,7 +4,7 @@ This fixture creates three Ubuntu 24.04 systemd containers with fixed addresses
 on an isolated Docker bridge. The normal Ansible playbooks install one K3s
 server and two K3s agents, after which the repository's service deployment
 script can install Rancher, Harbor, Portainer, Argo Workflows, cert-manager,
-and the NVIDIA discovery stack.
+the NVIDIA discovery stack, Loki, Grafana, Mimir, and Alloy.
 
 ## Requirements and safety
 
@@ -64,12 +64,13 @@ and leave everything running for experimentation, run:
 ```
 
 The script configures the local `sslip.io` hostnames and development-only
-Rancher and Harbor passwords, then deploys the entire bundle with one
+Rancher, Harbor, and Grafana passwords, then deploys the entire bundle with one
 `jihwija deploy` command. It prints the service URLs and login details when the
 deployment is ready. Rancher and Portainer API keys are not created because
 those must be generated through the corresponding web interfaces after initial
 setup. Override the development passwords with
-`JIHWIJA_RANCHER_BOOTSTRAP_PASSWORD` and `JIHWIJA_HARBOR_ADMIN_PASSWORD`, or
+`JIHWIJA_RANCHER_BOOTSTRAP_PASSWORD`, `JIHWIJA_HARBOR_ADMIN_PASSWORD`, and
+`JIHWIJA_GRAFANA_ADMIN_PASSWORD`, or
 change the 45-minute readiness limit with `JIHWIJA_SERVICE_TIMEOUT`.
 
 The containers are also left running if setup fails so they can be inspected.

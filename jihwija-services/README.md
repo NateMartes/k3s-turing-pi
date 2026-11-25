@@ -1,8 +1,8 @@
 # Jihwija Services
 
 This Kustomize bundle deploys Rancher, Harbor, Portainer, Argo Workflows,
-cert-manager, and the NVIDIA device plugin to the K3s cluster. Run the commands
-below from the repository root.
+cert-manager, the NVIDIA device plugin, Loki, Grafana, Mimir, and Alloy to the
+K3s cluster. Run the commands below from the repository root.
 
 ## Getting Started
 
@@ -33,8 +33,10 @@ sudo jihwija set hostname rancher rancher.10.42.0.31.sslip.io
 sudo jihwija set hostname harbor harbor.10.42.0.31.sslip.io
 sudo jihwija set hostname portainer portainer.10.42.0.31.sslip.io
 sudo jihwija set hostname argo argo.10.42.0.31.sslip.io
+sudo jihwija set hostname grafana grafana.10.42.0.31.sslip.io
 sudo jihwija set secret RANCHER_BOOTSTRAP_PASSWORD
 sudo jihwija set secret HARBOR_ADMIN_PASSWORD
+sudo jihwija set secret GRAFANA_ADMIN_PASSWORD
 ```
 
 `HARBOR_ADMIN_PASSWORD` is the initial password for Harbor's built-in `admin`
@@ -100,13 +102,20 @@ sudo jihwija deploy
 ```
 
 Individual services can be removed from or restored to the managed bundle.
-The supported names are `argo`, `cert-manager`, `harbor`, `nvidia`, `portainer`,
-and `rancher`:
+The supported names are `alloy`, `argo`, `cert-manager`, `grafana`, `harbor`,
+`loki`, `mimir`, `nvidia`, `portainer`, and `rancher`:
 
 ```bash
 sudo jihwija disable service harbor
 sudo jihwija enable service harbor
 ```
+
+The four observability services are deliberately independent. Alloy continues
+retrying both destinations when Loki or Mimir is disabled, and Grafana keeps
+both provisioned datasources. Mimir uses the pinned upstream
+`mimir-distributed` chart with one replica of each component; every component
+is selected onto the same `jihwija-services=true` node. See
+[Observability Stack](../docs/OBSERVABILITY.md).
 
 Disabling a service removes its manifest from `kustomization.yaml`, deletes its
 K3s HelmChart, and reconciles the remaining enabled services. Enabling it adds
@@ -244,6 +253,7 @@ remote file.
 - Portainer: `https://<PORTAINER_HOSTNAME>`
 - Rancher: `https://<RANCHER_HOSTNAME>`
 - Argo Workflows: `https://<ARGO_HOSTNAME>`
+- Grafana: `https://<GRAFANA_HOSTNAME>`
 
 If your computer cannot reach the cluster network directly, follow the
 [SSH tunneling guide](../docs/TUNNELING.md).
@@ -251,7 +261,8 @@ If your computer cannot reach the cluster network directly, follow the
 For Harbor's initial setup, log in as `admin` with
 `HARBOR_ADMIN_PASSWORD`. For Rancher, log in as `admin` with
 `RANCHER_BOOTSTRAP_PASSWORD`. Portainer guides you through creation of its
-initial administrator account.
+initial administrator account. For Grafana, log in as `admin` with
+`GRAFANA_ADMIN_PASSWORD`.
 
 ### 8. Log a container client into Harbor
 

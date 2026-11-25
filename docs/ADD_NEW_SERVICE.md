@@ -233,13 +233,13 @@ contrast, `jihwija enable service <name>` asks `render()` in
 
 - The shared `jihwija-system` Namespace.
 - The service's HelmChart.
-- Harbor's password Secret as an existing special case.
+- Every object whose `jihwija.io/service` label matches the selected service.
 
 If the new manifest contains a required Secret, ConfigMap, RBAC object, or
-other supporting resource outside the chart, extend the selection in
-`render()` so enabling that service applies those objects too. Give each
-supporting resource an unambiguous name or label and test that it is not
-selected for another service.
+other supporting resource outside the chart, label it with
+`jihwija.io/service: <name>`. Do not add service-specific branches to
+`render()`. Test that the resource is selected for its owner and not for
+another service.
 
 The generic disable path deletes only the service's HelmChart. This lets Helm
 uninstall chart-managed resources while retaining independent credentials and

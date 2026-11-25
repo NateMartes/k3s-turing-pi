@@ -5,6 +5,7 @@ metadata:
   namespace: jihwija-system
   labels:
     app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: harbor
 type: Opaque
 data:
   # Rendered by scripts/plumbing-scripts/deploy-services.py from jihwija.env.
@@ -17,6 +18,7 @@ metadata:
   namespace: kube-system
   labels:
     app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: harbor
 spec:
   chart: harbor
   repo: https://helm.goharbor.io

@@ -70,7 +70,10 @@ def test_container_integration_driver_is_executable_and_valid_bash() -> None:
     subprocess.run(["bash", "-n", str(driver)], check=True)
 
     source = driver.read_text()
-    for service in ("nvidia", "cert-manager", "rancher", "harbor", "portainer", "argo"):
+    for service in (
+        "nvidia", "cert-manager", "rancher", "harbor", "portainer", "argo",
+        "loki", "grafana", "mimir", "alloy",
+    ):
         assert service in source
     assert "jihwija init" in source
     assert "jihwija install k3s" in source
@@ -90,6 +93,7 @@ def test_container_playground_driver_is_executable_and_valid_bash() -> None:
     assert "jihwija deploy --service" not in source
     assert "RANCHER_BOOTSTRAP_PASSWORD" in source
     assert "HARBOR_ADMIN_PASSWORD" in source
+    assert "GRAFANA_ADMIN_PASSWORD" in source
     assert "RANCHER_TOKEN=" not in source
     assert "PORTAINER_API_KEY=" not in source
     assert "compose down" not in source.split("main()", 1)[1]

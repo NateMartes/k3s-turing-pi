@@ -5,6 +5,7 @@ metadata:
   namespace: kube-system
   labels:
     app.kubernetes.io/part-of: jihwija
+    jihwija.io/service: portainer
 spec:
   chart: portainer
   repo: https://portainer.github.io/k8s/
