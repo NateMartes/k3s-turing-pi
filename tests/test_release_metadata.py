@@ -5,6 +5,8 @@ import json
 import re
 from pathlib import Path
 
+import yaml
+
 try:
     import tomllib
 except ModuleNotFoundError:  # Python 3.10
@@ -47,4 +49,31 @@ def test_current_version_has_a_changelog_entry() -> None:
     )
     assert re.search(heading, changelog, flags=re.MULTILINE), (
         f"CHANGELOG.md has no entry for version {version}"
+    )
+
+
+def test_release_runs_container_integration_on_master() -> None:
+    release = yaml.load(
+        (ROOT / ".github" / "workflows" / "release.yml").read_text(),
+        Loader=yaml.BaseLoader,
+    )
+    integration = yaml.load(
+        (
+            ROOT
+            / ".github"
+            / "workflows"
+            / "test-jihwija-in-containers.yml"
+        ).read_text(),
+        Loader=yaml.BaseLoader,
+    )
+
+    assert release["on"]["push"]["branches"] == ["master"]
+    integration_job = release["jobs"]["container-integration"]
+    assert integration_job["uses"] == (
+        "./.github/workflows/test-jihwija-in-containers.yml"
+    )
+    assert "container-integration" in release["jobs"]["release"]["needs"]
+    assert "workflow_call" in integration["on"]
+    assert integration["jobs"]["test"]["steps"][-1]["run"] == (
+        "tests/test-env/test-jihwija-with-containers.sh"
     )

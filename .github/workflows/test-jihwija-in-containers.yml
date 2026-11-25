@@ -1,0 +1,21 @@
+name: Test Jihwija in containers
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  test:
+    name: Run container integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Test Jihwija in containers
+        run: tests/test-env/test-jihwija-with-containers.sh

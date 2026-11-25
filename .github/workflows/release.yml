@@ -43,9 +43,17 @@ jobs:
       - name: Build and validate man pages
         run: make -C docs check
 
+  container-integration:
+    name: Test Jihwija in containers
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test-jihwija-in-containers.yml
+
   release:
     name: Update release PR or publish release
-    needs: validate
+    needs:
+      - validate
+      - container-integration
     runs-on: ubuntu-latest
     permissions:
       contents: write
