@@ -22,6 +22,7 @@ RUN apt-get update \
         sudo \
         systemd \
         systemd-sysv \
+        sshpass \
     && useradd --create-home --shell /bin/bash ansible \
     && echo 'ansible:jihwija-test' | chpasswd \
     && printf 'ansible ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/ansible \

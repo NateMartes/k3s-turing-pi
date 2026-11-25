@@ -58,9 +58,11 @@ sudo k3s kubectl get ingress,certificate --namespace jihwija-system
 
 The managed CLI profile sets `ARGO_INSECURE_SKIP_VERIFY=true`, so Argo CLI
 connections through the HTTPS Ingress remain encrypted but do not verify the
-Ingress certificate. The Helm release sets
-`ARGO_INSECURE_SKIP_TLS_VERIFY=true` on both the workflow controller and Argo
-Server, disabling certificate verification for their Kubernetes API clients.
+Ingress certificate. The workflow controller and Argo Server use their
+service-account credentials and the standard in-cluster Kubernetes API
+configuration. `ARGO_INSECURE_SKIP_TLS_VERIFY` must not be set on those Pods;
+without an explicit Kubernetes API server address it produces an invalid empty
+client configuration.
 
 Use the Argo CLI's `--argo-http1` option with this standard HTTP Ingress. This
 avoids requiring the Ingress route to support end-to-end gRPC over h2c.

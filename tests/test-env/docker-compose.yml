@@ -3,7 +3,27 @@ name: jihwija-test
 x-node: &node
   image: jihwija-test-node:ubuntu24.04
   privileged: true
-  cgroup: host
+  cgroup: private
+  command:
+    - /bin/sh
+    - -ec
+    - |
+      mount --make-rshared /
+      install -d -m 700 /root/.ssh /home/ansible/.ssh
+      install -m 600 /test-ssh/id_ed25519 /root/.ssh/id_ed25519
+      install -m 644 /test-ssh/id_ed25519.pub /root/.ssh/id_ed25519.pub
+      install -m 600 /test-ssh/id_ed25519.pub /root/.ssh/authorized_keys
+      install -m 600 -o ansible -g ansible /test-ssh/id_ed25519.pub /home/ansible/.ssh/authorized_keys
+      chown ansible:ansible /home/ansible/.ssh
+      install -d -m 755 /etc/rancher/k3s/config.yaml.d
+      cat <<'EOF' > /etc/rancher/k3s/config.yaml.d/99-eviction.yaml
+      kubelet-arg+:
+        - "eviction-hard=imagefs.available<2Gi,nodefs.available<2Gi"
+        - "eviction-minimum-reclaim=imagefs.available=500Mi,nodefs.available=500Mi"
+        - "image-gc-high-threshold=98"
+        - "image-gc-low-threshold=95"
+      EOF
+      exec /sbin/init
   environment:
     container: docker
   tmpfs:
@@ -11,7 +31,6 @@ x-node: &node
     - /run/lock
   volumes:
     - test-ssh:/test-ssh:ro
-    - /sys/fs/cgroup:/sys/fs/cgroup:rw
     - /lib/modules:/lib/modules:ro
     - ../..:/workspace:ro
   depends_on:
@@ -34,6 +53,8 @@ services:
     command: ["/usr/local/sbin/generate-test-ssh-key"]
     volumes:
       - test-ssh:/test-ssh
+    networks:
+      - cluster
     restart: "no"
 
   operator:
@@ -42,8 +63,16 @@ services:
       target: operator
     image: jihwija-test-operator:ubuntu24.04
     working_dir: /workspace/tests/test-env
-    command: ["sleep", "infinity"]
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        install -d -m 700 /root/.ssh
+        install -m 600 /test-ssh/id_ed25519 /root/.ssh/id_ed25519
+        install -m 644 /test-ssh/id_ed25519.pub /root/.ssh/id_ed25519.pub
+        exec sleep infinity
     volumes:
+      - test-ssh:/test-ssh:ro
       - ../..:/workspace:ro
     networks:
       - cluster

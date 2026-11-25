@@ -18,6 +18,7 @@ from lib.config_env import JIHWIJA_ENV, load_jihwija_env_or_exit
 
 HOSTNAME_VARIABLES = ("RANCHER_HOSTNAME", "HARBOR_HOSTNAME", "PORTAINER_HOSTNAME", "ARGO_HOSTNAME")
 CHART_NAMES = {
+    "cert-manager": "cert-manager",
     "nvidia": "nvidia-device-plugin",
     "rancher": "rancher",
     "harbor": "harbor",
@@ -102,7 +103,9 @@ def render(service: str | None) -> str:
             continue
         kind = document.get("kind")
         name = document.get("metadata", {}).get("name")
-        if (kind == "HelmChart" and name == chart) or (
+        if (kind == "Namespace" and name == "jihwija-system") or (
+            kind == "HelmChart" and name == chart
+        ) or (
             service == "harbor" and kind == "Secret" and name == "harbor-admin-password"
         ):
             selected.append(document)

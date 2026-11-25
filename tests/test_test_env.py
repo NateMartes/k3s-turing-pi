@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import ipaddress
+import os
 from pathlib import Path
+import subprocess
 
 import yaml
 
@@ -60,3 +62,18 @@ def test_inventory_has_one_server_gateway_and_service_node() -> None:
         for index, left in enumerate(networks)
         for right in networks[index + 1 :]
     )
+
+
+def test_container_integration_driver_is_executable_and_valid_bash() -> None:
+    driver = TEST_ENV / "test-jihwija-with-containers.sh"
+    assert os.access(driver, os.X_OK)
+    subprocess.run(["bash", "-n", str(driver)], check=True)
+
+    source = driver.read_text()
+    for service in ("nvidia", "cert-manager", "rancher", "harbor", "portainer", "argo"):
+        assert service in source
+    assert "jihwija init" in source
+    assert "jihwija install k3s" in source
+    assert "ansible all --inventory inventory.yml --module-name ping" in source
+    assert '"metadata":{"finalizers":[]}' in source
+    assert 'namespaces/$namespace/finalize' in source

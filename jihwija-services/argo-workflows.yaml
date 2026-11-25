@@ -49,11 +49,6 @@ spec:
       workflowNamespaces: []
       nodeSelector:
         jihwija-services: "true"
-      # The controller uses the Kubernetes client's TLS flag, which is distinct
-      # from the Argo CLI flag used for connections to Argo Server.
-      extraEnv:
-        - name: ARGO_INSECURE_SKIP_TLS_VERIFY
-          value: "true"
       clusterWorkflowTemplates:
         enabled: true
 
@@ -65,10 +60,6 @@ spec:
       servicePortName: http
       nodeSelector:
         jihwija-services: "true"
-      # Do not verify the Kubernetes API certificate from Argo Server either.
-      extraEnv:
-        - name: ARGO_INSECURE_SKIP_TLS_VERIFY
-          value: "true"
       clusterWorkflowTemplates:
         enabled: true
         enableEditing: false

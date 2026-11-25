@@ -30,12 +30,21 @@ DEFAULTS = {
     "k3s_resolv_conf": "/etc/rancher/k3s/resolv.conf",
     "k3s_dns_servers": ["1.1.1.1", "8.8.8.8"],
     "k3s_flannel_iface": "",
+    "k3s_snapshotter": "",
     "netplan_dhcp_apply": False,
     "netplan_dhcp_interface": "",
     "netplan_dhcp_definition": "",
     "default_gateway_lan_interface": "",
     "default_gateway_wan_interface": "",
 }
+
+
+def configuration_defaults(
+    existing_settings: dict,
+    inventory_variables: dict,
+) -> dict:
+    """Merge defaults in increasing order of relevance."""
+    return {**DEFAULTS, **existing_settings, **inventory_variables}
 
 
 def csv_prompt(label: str, default: list[str] | None = None) -> list[str]:
@@ -54,6 +63,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dns-server", action="append", dest="dns_servers")
     parser.add_argument("--resolv-conf")
     parser.add_argument("--flannel-interface")
+    parser.add_argument("--snapshotter")
     parser.add_argument("--dhcp-apply", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--dhcp-interface")
     parser.add_argument("--dhcp-definition")
@@ -92,9 +102,12 @@ def main() -> None:
         if not hosts:
             raise JihwijaError("The inventory contains no hosts.")
 
-        existing_settings = load_yaml(GROUP_VARS_PATH) if GROUP_VARS_PATH.exists() else {}
-        defaults = {**DEFAULTS, **existing_settings}
         all_vars = inventory_all(inventory).setdefault("vars", {})
+        existing_settings = load_yaml(GROUP_VARS_PATH) if GROUP_VARS_PATH.exists() else {}
+        # An explicitly supplied inventory is the most relevant source of
+        # defaults.  The normalized values are moved to group_vars below so
+        # Ansible does not retain a stale, higher-precedence duplicate.
+        defaults = configuration_defaults(existing_settings, all_vars)
         current_user = all_vars.get("ansible_user") or os.environ.get("SUDO_USER") or getpass.getuser()
 
         ansible_user = args.ansible_user or prompt("Default SSH user", str(current_user))
@@ -116,6 +129,11 @@ def main() -> None:
             args.flannel_interface
             if args.flannel_interface is not None
             else prompt("Default Flannel interface (blank for automatic)", str(defaults["k3s_flannel_iface"]))
+        )
+        snapshotter = (
+            args.snapshotter
+            if args.snapshotter is not None
+            else str(defaults["k3s_snapshotter"])
         )
         dhcp_apply = args.dhcp_apply
         if dhcp_apply is None:
@@ -202,6 +220,7 @@ def main() -> None:
             "k3s_resolv_conf": resolv,
             "k3s_dns_servers": [str(ipaddress.ip_address(value)) for value in dns],
             "k3s_flannel_iface": flannel,
+            "k3s_snapshotter": snapshotter,
             "netplan_dhcp_apply": bool(dhcp_apply),
             "netplan_dhcp_interface": dhcp_interface,
             "netplan_dhcp_definition": dhcp_definition,
@@ -213,6 +232,8 @@ def main() -> None:
                 "Gateway WAN interface (blank for automatic)", str(defaults["default_gateway_wan_interface"])
             ),
         }
+        for key in settings:
+            all_vars.pop(key, None)
         validate_networks(settings, hosts)
         print("Validating SSH, sudo, operating system, and service-node architecture...")
         for name, variables in hosts.items():

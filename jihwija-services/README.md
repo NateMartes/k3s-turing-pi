@@ -51,8 +51,10 @@ CLI uses this endpoint to submit workflows while Argo Server enforces the
 caller's Kubernetes RBAC permissions.
 
 The managed Argo CLI profile sets `ARGO_INSECURE_SKIP_VERIFY=true` for this
-HTTPS endpoint. The Helm release sets `ARGO_INSECURE_SKIP_TLS_VERIFY=true` on
-the workflow controller and Argo Server for their Kubernetes API connections.
+HTTPS endpoint. The workflow controller and Argo Server use their Kubernetes
+service accounts and the standard in-cluster API configuration. Do not set
+`ARGO_INSECURE_SKIP_TLS_VERIFY` on those Pods: it selects Argo's explicit
+Kubernetes-client configuration without supplying an API server address.
 
 ### 3. Remove a previous standalone Argo installation
 

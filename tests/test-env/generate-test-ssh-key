@@ -10,8 +10,7 @@ fi
 
 # Recreate the public half if the named volume survived an interrupted setup.
 public_key="${key}.pub.tmp"
-ssh-keygen -y -f "$key" > "$public_key"
-printf ' jihwija-test-env\n' >> "$public_key"
+printf '%s jihwija-test-env\n' "$(ssh-keygen -y -f "$key")" > "$public_key"
 mv "$public_key" "${key}.pub"
 chmod 0600 "$key"
 chmod 0644 "${key}.pub"

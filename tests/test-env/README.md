@@ -24,7 +24,39 @@ Git and the other node prerequisites are installed in the test image. If you
 install additional Ubuntu packages interactively, refresh the package index in
 that ephemeral container first with `apt-get update`.
 
+## Run the complete integration test
+
+The test driver installs Docker Engine and Docker Compose v2 when necessary on
+Ubuntu or Debian, creates the three nodes, verifies SSH, installs and initializes
+Jihwija, and provisions K3s. It then deploys every managed service, checks its
+workloads or HTTPS endpoint, and tears it down before moving to the next one:
+
+```bash
+./test-jihwija-with-containers.sh
+```
+
+Cert-manager remains installed while Rancher and Argo are tested because they
+depend on it, and is removed last. Unused K3s images are pruned between services
+to reduce CI disk usage. If an application Helm post-delete hook leaves a test
+release stuck, the driver removes that service namespace and clears only the
+corresponding disposable HelmChart finalizer after a short grace period. It
+also clears finalizers from resources in a terminating test namespace and, as
+a final fallback, finalizes that disposable namespace through the Kubernetes
+API. The script prints cluster diagnostics after a failure and removes the
+Compose project on exit. To retain a failed cluster for manual inspection, run:
+
+```bash
+JIHWIJA_TEST_KEEP_ENV=1 ./test-jihwija-with-containers.sh
+```
+
+The service readiness timeout defaults to 45 minutes and can be changed with
+`JIHWIJA_TEST_SERVICE_TIMEOUT`. In GitHub Actions, invoke the script from a
+normal Ubuntu VM job rather than an `ubuntu-slim` or job-container runner; a
+larger or self-hosted runner is recommended for the complete service sequence.
+
 ## Start and provision the nodes
+
+The following commands are the manual equivalent of the initial test stages.
 
 Run these commands from this directory:
 

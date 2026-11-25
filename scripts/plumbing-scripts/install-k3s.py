@@ -8,7 +8,6 @@ from lib.jihwija_common import (
     INVENTORY_PATH,
     JihwijaError,
     kubectl,
-    print_bak,
     require_root,
     run_ansible_playbook,
     run_plumbing,
@@ -28,8 +27,6 @@ def main() -> None:
         run_plumbing("deploy-services.py", "--service", "nvidia", "--timeout", "10m")
         print("\nK3s nodes")
         kubectl("get", "nodes", "-o", "wide")
-        print()
-        print_bak()
     except (JihwijaError, subprocess.CalledProcessError) as exc:
         raise SystemExit(f"ERROR: K3s installation failed: {exc}") from exc
 

@@ -89,6 +89,25 @@ class InventoryTests(unittest.TestCase):
         with self.assertRaises(JihwijaError):
             validate_networks(self.settings, inventory_hosts(self.inventory))
 
+    def test_init_uses_inventory_cluster_variables_as_defaults(self):
+        sys.modules["lib"] = lib_package
+        module = runpy.run_path(
+            str(PLUMBING / "init-cluster.py"),
+            run_name="_test_init_cluster_defaults",
+        )
+        inventory = yaml.safe_load(
+            (ROOT / "tests" / "test-env" / "inventory.yml").read_text()
+        )
+
+        defaults = module["configuration_defaults"](
+            {"k3s_lan_cidr": "192.0.2.0/24", "k3s_snapshotter": "overlayfs"},
+            inventory["all"]["vars"],
+        )
+
+        self.assertEqual(defaults["k3s_lan_cidr"], "172.31.42.0/24")
+        self.assertEqual(defaults["k3s_flannel_iface"], "eth0")
+        self.assertEqual(defaults["k3s_snapshotter"], "native")
+
 
 class EnvironmentTests(unittest.TestCase):
     def test_environment_round_trip_and_permissions(self):
@@ -468,6 +487,10 @@ class RepositoryTests(unittest.TestCase):
         for path in (ROOT / "jihwija-services").glob("*.yaml"):
             list(yaml.safe_load_all(path.read_text()))
 
+    def test_argo_server_uses_in_cluster_kubernetes_configuration(self):
+        manifest = (ROOT / "jihwija-services" / "argo-workflows.yaml").read_text()
+        self.assertNotIn("ARGO_INSECURE_SKIP_TLS_VERIFY", manifest)
+
     def test_k3s_install_reconciles_gpu_support(self):
         install = (PLUMBING / "install-k3s.py").read_text()
         add_node = (PLUMBING / "add-node.py").read_text()
@@ -475,6 +498,10 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn('run_plumbing("deploy-services.py", "--service", "nvidia"', install)
         self.assertIn('run_plumbing("deploy-services.py", "--service", "nvidia"', add_node)
         self.assertIn('"k3s-taint-gpu-nodes.py"', deploy)
+
+    def test_k3s_install_does_not_print_bak(self):
+        install = (PLUMBING / "install-k3s.py").read_text()
+        self.assertNotIn("print_bak", install)
 
 
 class GpuTaintTests(unittest.TestCase):
