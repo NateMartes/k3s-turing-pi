@@ -9,6 +9,7 @@ PANDOC_FLAGS := --standalone --from=gfm+yaml_metadata_block --to=man \
 
 MAN1_SOURCES := CLI_REFERENCE.md
 MAN7_SOURCES := \
+  ADD_NEW_SERVICE.md \
   ADDING_A_JETSON_ORIN.md \
   ADDING_A_NEW_NODE.md \
   ARGO_CLUSTER_ADMINS.md \
@@ -20,6 +21,7 @@ MAN_SOURCES := $(MAN1_SOURCES) $(MAN7_SOURCES)
 
 MAN1_PAGES := $(BUILD_DIR)/jihwija.1
 MAN7_PAGES := \
+  $(BUILD_DIR)/jihwija-add-service.7 \
   $(BUILD_DIR)/jihwija-add-jetson.7 \
   $(BUILD_DIR)/jihwija-add-node.7 \
   $(BUILD_DIR)/jihwija-argo-template-admin.7 \
@@ -53,6 +55,7 @@ $(BUILD_DIR)/$(1).$(2): $(3) man-filter.lua | $(BUILD_DIR)
 endef
 
 $(eval $(call build_man_page,jihwija,1,CLI_REFERENCE.md))
+$(eval $(call build_man_page,jihwija-add-service,7,ADD_NEW_SERVICE.md))
 $(eval $(call build_man_page,jihwija-add-jetson,7,ADDING_A_JETSON_ORIN.md))
 $(eval $(call build_man_page,jihwija-add-node,7,ADDING_A_NEW_NODE.md))
 $(eval $(call build_man_page,jihwija-argo-template-admin,7,ARGO_CLUSTER_ADMINS.md))

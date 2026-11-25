@@ -77,3 +77,19 @@ def test_container_integration_driver_is_executable_and_valid_bash() -> None:
     assert "ansible all --inventory inventory.yml --module-name ping" in source
     assert '"metadata":{"finalizers":[]}' in source
     assert 'namespaces/$namespace/finalize' in source
+
+
+def test_container_playground_driver_is_executable_and_valid_bash() -> None:
+    driver = TEST_ENV / "jihwija-with-containers.sh"
+    assert os.access(driver, os.X_OK)
+    subprocess.run(["bash", "-n", str(driver)], check=True)
+
+    source = driver.read_text()
+    assert "jihwija install k3s" in source
+    assert 'controller jihwija deploy --timeout "$SERVICE_TIMEOUT"' in source
+    assert "jihwija deploy --service" not in source
+    assert "RANCHER_BOOTSTRAP_PASSWORD" in source
+    assert "HARBOR_ADMIN_PASSWORD" in source
+    assert "RANCHER_TOKEN=" not in source
+    assert "PORTAINER_API_KEY=" not in source
+    assert "compose down" not in source.split("main()", 1)[1]

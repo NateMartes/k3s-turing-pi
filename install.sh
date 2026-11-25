@@ -62,6 +62,7 @@ if [ -d "$install_root" ]; then
         ansible/inventory.yml \
         ansible/group_vars/all.yml \
         etc/jihwija.env \
+        jihwija-services/kustomization.yaml \
         scripts/state
     do
         if [ -e "$install_root/$relative" ]; then

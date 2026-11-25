@@ -99,6 +99,20 @@ Deploy through the CLI after configuration:
 sudo jihwija deploy
 ```
 
+Individual services can be removed from or restored to the managed bundle.
+The supported names are `argo`, `cert-manager`, `harbor`, `nvidia`, `portainer`,
+and `rancher`:
+
+```bash
+sudo jihwija disable service harbor
+sudo jihwija enable service harbor
+```
+
+Disabling a service removes its manifest from `kustomization.yaml`, deletes its
+K3s HelmChart, and reconciles the remaining enabled services. Enabling it adds
+the manifest back and deploys that service. The selected service set is kept
+across Jihwija upgrades.
+
 The plumbing scripts read `/opt/jihwija/etc/jihwija.env` automatically.
 Hostname changes offer to redeploy the affected service immediately.
 

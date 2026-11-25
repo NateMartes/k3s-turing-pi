@@ -34,6 +34,8 @@ by a specific command.
 | **Set Service Secret** | `sudo jihwija set secret <key>` | `sudo ./scripts/plumbing-scripts/set-secret.py <key>` |
 | **Enable Quotas** | `sudo jihwija enable quotas <path>` | `sudo ./scripts/plumbing-scripts/enable-quotas.py <path>` |
 | **Disable Quotas** | `sudo jihwija disable quotas <path>` | `sudo ./scripts/plumbing-scripts/disable-quotas.py <path>` |
+| **Enable Service** | `sudo jihwija enable service <service>` | `sudo ./scripts/plumbing-scripts/enable-service.py <service>` |
+| **Disable Service** | `sudo jihwija disable service <service>` | `sudo ./scripts/plumbing-scripts/disable-service.py <service>` |
 
 ## Managed User Commands
 

@@ -40,6 +40,7 @@ Comprehensive operational and architecture guides are available in [`docs/`](doc
 | **[User Setup Guide](docs/SETUP_USERS.md)** | Dedicated guide for multi-tenant user provisioning, filesystem/K3s quotas, password updates, and service integrations. |
 | **[Web UI Tunneling](docs/TUNNELING.md)** | Instructions for accessing cluster dashboards (Rancher, Harbor, Portainer, Argo) from remote workstations via SOCKS5 proxy. |
 | **[Deploying an Argo Workflow](docs/DEPLOYING_ARGO_WORKFLOW.md)** | Guide to running batch tasks, ML workflows, and containerized pipelines with namespace runners. |
+| **[Adding a New Service](docs/ADD_NEW_SERVICE.md)** | Maintainer guide for registering, configuring, testing, and operating a Helm-managed Jihwija service. |
 | **[Adding a New Node](docs/ADDING_A_NEW_NODE.md)** | Hardware and OS preparation for Turing Pi RK1, Raspberry Pi, or generic x86 worker nodes. |
 | **[Adding a Jetson Orin](docs/ADDING_A_JETSON_ORIN.md)** | Preparing NVIDIA Jetson Orin modules with GPU drivers and container runtimes. |
 

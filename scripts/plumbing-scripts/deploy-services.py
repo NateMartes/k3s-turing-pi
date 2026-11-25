@@ -15,16 +15,9 @@ from pathlib import Path
 import yaml
 
 from lib.config_env import JIHWIJA_ENV, load_jihwija_env_or_exit
+from lib.service_management import CHART_NAMES, enabled_services
 
 HOSTNAME_VARIABLES = ("RANCHER_HOSTNAME", "HARBOR_HOSTNAME", "PORTAINER_HOSTNAME", "ARGO_HOSTNAME")
-CHART_NAMES = {
-    "cert-manager": "cert-manager",
-    "nvidia": "nvidia-device-plugin",
-    "rancher": "rancher",
-    "harbor": "harbor",
-    "portainer": "portainer",
-    "argo": "argo-workflows",
-}
 WORKLOAD_SELECTORS = {
     "cert-manager": ("cert-manager", "app.kubernetes.io/instance=cert-manager"),
     "nvidia": ("nvidia-device-plugin", "app.kubernetes.io/instance=nvidia-device-plugin"),
@@ -59,22 +52,26 @@ def validate_hostname(variable: str, value: str) -> None:
         die(f"{variable} must be a valid DNS hostname without a scheme or path.")
 
 
-def configured_values() -> dict[str, str]:
+def configured_values(required: set[str] | None = None) -> dict[str, str]:
     values: dict[str, str] = {}
     for variable in HOSTNAME_VARIABLES:
+        if required is not None and variable not in required:
+            continue
         value = os.environ.get(variable, "").strip()
         if not value:
             die(f"{variable} is not set in {JIHWIJA_ENV}.")
         validate_hostname(variable, value)
         values[variable] = value
-    rancher = os.environ.get("RANCHER_BOOTSTRAP_PASSWORD", "")
-    harbor = os.environ.get("HARBOR_ADMIN_PASSWORD", "")
-    if not rancher or "\n" in rancher or "\r" in rancher:
-        die("RANCHER_BOOTSTRAP_PASSWORD must be set and contain no newline.")
-    if not harbor or "\n" in harbor or "\r" in harbor:
-        die("HARBOR_ADMIN_PASSWORD must be set and contain no newline.")
-    values["RANCHER_BOOTSTRAP_PASSWORD_JSON"] = json.dumps(rancher)
-    values["HARBOR_ADMIN_PASSWORD_B64"] = base64.b64encode(harbor.encode()).decode()
+    if required is None or "RANCHER_BOOTSTRAP_PASSWORD_JSON" in required:
+        rancher = os.environ.get("RANCHER_BOOTSTRAP_PASSWORD", "")
+        if not rancher or "\n" in rancher or "\r" in rancher:
+            die("RANCHER_BOOTSTRAP_PASSWORD must be set and contain no newline.")
+        values["RANCHER_BOOTSTRAP_PASSWORD_JSON"] = json.dumps(rancher)
+    if required is None or "HARBOR_ADMIN_PASSWORD_B64" in required:
+        harbor = os.environ.get("HARBOR_ADMIN_PASSWORD", "")
+        if not harbor or "\n" in harbor or "\r" in harbor:
+            die("HARBOR_ADMIN_PASSWORD must be set and contain no newline.")
+        values["HARBOR_ADMIN_PASSWORD_B64"] = base64.b64encode(harbor.encode()).decode()
     return values
 
 
@@ -87,10 +84,18 @@ def render(service: str | None) -> str:
         return (services / "nvidia-device-plugin.yaml").read_text()
     result = command(["kustomize", str(services)], check=True, capture_output=True, text=True)
     rendered = result.stdout
-    for variable, value in configured_values().items():
+    configurable = {
+        *HOSTNAME_VARIABLES,
+        "RANCHER_BOOTSTRAP_PASSWORD_JSON",
+        "HARBOR_ADMIN_PASSWORD_B64",
+    }
+    required = {
+        variable
+        for variable in configurable
+        if "${" + variable + "}" in rendered
+    }
+    for variable, value in configured_values(required).items():
         placeholder = "${" + variable + "}"
-        if placeholder not in rendered:
-            die(f"The rendered manifests do not contain {placeholder}.")
         rendered = rendered.replace(placeholder, value)
     if "${" in rendered:
         die("The rendered manifests contain an unresolved environment placeholder.")
@@ -133,7 +138,8 @@ def wait_for_harbor_database_before_upgrade() -> None:
 
 
 def selected_workloads(service: str | None) -> dict[str, tuple[str, str]]:
-    return {service: WORKLOAD_SELECTORS[service]} if service else WORKLOAD_SELECTORS
+    selected = [service] if service else enabled_services()
+    return {name: WORKLOAD_SELECTORS[name] for name in selected}
 
 
 def find_workloads(namespace: str, selector: str) -> list[str]:
@@ -175,13 +181,17 @@ def main() -> None:
     parser.add_argument("--service", choices=sorted(CHART_NAMES), help=argparse.SUPPRESS)
     args = parser.parse_args()
     parse_duration(args.timeout)
-    if args.service in (None, "harbor"):
+    active_services = enabled_services()
+    if args.service and args.service not in active_services:
+        print(f"Skipping disabled service: {args.service}")
+        return
+    if args.service == "harbor" or (args.service is None and "harbor" in active_services):
         wait_for_harbor_database_before_upgrade()
     command(["apply", "-f", "-"], check=True, input=render(args.service), text=True)
     if args.redeploy:
         restart_workloads(args.service)
     wait_for_workloads(args.service, args.timeout)
-    if args.service in (None, "nvidia"):
+    if args.service == "nvidia" or (args.service is None and "nvidia" in active_services):
         subprocess.run(
             [
                 str(Path(__file__).resolve().parent / "k3s-taint-gpu-nodes.py"),
@@ -194,10 +204,12 @@ def main() -> None:
         subprocess.run([str(Path(__file__).resolve().parent / "trust-k3s-certs.py")], check=True)
     if args.service == "nvidia":
         return
-    values = configured_values()
     variables = {"rancher": "RANCHER_HOSTNAME", "harbor": "HARBOR_HOSTNAME", "portainer": "PORTAINER_HOSTNAME", "argo": "ARGO_HOSTNAME"}
+    selected = {args.service} if args.service else set(active_services)
+    required = {variable for service, variable in variables.items() if service in selected}
+    values = configured_values(required)
     for service, variable in variables.items():
-        if args.service in (None, service):
+        if service in selected:
             print(f"{service.title()}: https://{values[variable]}")
 
 

@@ -54,6 +54,27 @@ The service readiness timeout defaults to 45 minutes and can be changed with
 normal Ubuntu VM job rather than an `ubuntu-slim` or job-container runner; a
 larger or self-hosted runner is recommended for the complete service sequence.
 
+## Run an interactive playground
+
+To build the same three-node cluster, deploy every enabled service together,
+and leave everything running for experimentation, run:
+
+```bash
+./jihwija-with-containers.sh
+```
+
+The script configures the local `sslip.io` hostnames and development-only
+Rancher and Harbor passwords, then deploys the entire bundle with one
+`jihwija deploy` command. It prints the service URLs and login details when the
+deployment is ready. Rancher and Portainer API keys are not created because
+those must be generated through the corresponding web interfaces after initial
+setup. Override the development passwords with
+`JIHWIJA_RANCHER_BOOTSTRAP_PASSWORD` and `JIHWIJA_HARBOR_ADMIN_PASSWORD`, or
+change the 45-minute readiness limit with `JIHWIJA_SERVICE_TIMEOUT`.
+
+The containers are also left running if setup fails so they can be inspected.
+Use the reset command at the end of this document when you are finished.
+
 ## Start and provision the nodes
 
 The following commands are the manual equivalent of the initial test stages.

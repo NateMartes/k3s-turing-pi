@@ -18,9 +18,11 @@ ROUTES = {
     },
     "enable": {
         "quotas": "enable-quotas.py",
+        "service": "enable-service.py",
     },
     "disable": {
         "quotas": "disable-quotas.py",
+        "service": "disable-service.py",
     },
     "set": {
         "secret": "set-secret.py",
@@ -56,6 +58,8 @@ COMMAND_DESCRIPTIONS: list[tuple[str, str]] = [
     ("uninstall k3s", "remove K3s from every inventory node"),
     ("enable quotas PATH", "enable filesystem user quotas"),
     ("disable quotas PATH", "disable filesystem user quotas"),
+    ("enable service SERVICE", "enable and deploy a cluster service"),
+    ("disable service SERVICE", "disable and remove a cluster service"),
     ("set secret KEY", "store a protected service secret"),
     ("set hostname SERVICE", "configure a service hostname"),
     ("set user quota [USER]", "update a managed user's quotas"),

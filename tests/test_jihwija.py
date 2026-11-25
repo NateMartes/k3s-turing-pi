@@ -34,6 +34,7 @@ lib_spec.loader.exec_module(lib_package)
 jihwija_common = importlib.import_module("jihwija_plumbing_lib.jihwija_common")
 k3s_gpu_taints = importlib.import_module("jihwija_plumbing_lib.k3s_gpu_taints")
 user_privileges = importlib.import_module("jihwija_plumbing_lib.user_privileges")
+service_management = importlib.import_module("jihwija_plumbing_lib.service_management")
 JihwijaError = jihwija_common.JihwijaError
 add_host = jihwija_common.add_host
 inventory_hosts = jihwija_common.inventory_hosts
@@ -117,6 +118,35 @@ class EnvironmentTests(unittest.TestCase):
             write_env(values, path)
             self.assertEqual(parse_env(path), values)
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+
+class ServiceManagementTests(unittest.TestCase):
+    def test_service_state_is_stored_in_kustomization_resources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "kustomization.yaml"
+            path.write_text(
+                (ROOT / "jihwija-services" / "kustomization.yaml").read_text()
+            )
+
+            self.assertTrue(
+                service_management.set_service_enabled("harbor", False, path)
+            )
+            self.assertNotIn("harbor", service_management.enabled_services(path))
+            resources = yaml.safe_load(path.read_text())["resources"]
+            self.assertIn("namespace.yaml", resources)
+            self.assertNotIn("harbor.yaml", resources)
+
+            self.assertFalse(
+                service_management.set_service_enabled("harbor", False, path)
+            )
+            self.assertTrue(
+                service_management.set_service_enabled("harbor", True, path)
+            )
+            self.assertIn("harbor", service_management.enabled_services(path))
+            self.assertLess(
+                yaml.safe_load(path.read_text())["resources"].index("rancher.yaml"),
+                yaml.safe_load(path.read_text())["resources"].index("harbor.yaml"),
+            )
 
 
 class InstallerTests(unittest.TestCase):
@@ -428,6 +458,16 @@ class RepositoryTests(unittest.TestCase):
 
         self.assertEqual(ROUTES["enable"]["quotas"], "enable-quotas.py")
         self.assertEqual(ROUTES["disable"]["quotas"], "disable-quotas.py")
+        self.assertEqual(ROUTES["enable"]["service"], "enable-service.py")
+        self.assertEqual(ROUTES["disable"]["service"], "disable-service.py")
+        self.assertEqual(
+            resolve_route(["enable", "service", "harbor"]),
+            ("enable-service.py", 2),
+        )
+        self.assertEqual(
+            resolve_route(["disable", "service", "harbor"]),
+            ("disable-service.py", 2),
+        )
         self.assertEqual(ROUTES["trust"]["certs"], "trust-k3s-certs.py")
         self.assertEqual(ROUTES["grant"]["user"], "grant-user-privilege.py")
         self.assertEqual(ROUTES["revoke"]["user"], "revoke-user-privilege.py")
@@ -452,6 +492,8 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn("quota", format_help("set user"))
         self.assertIn("node", format_help("add"))
         self.assertIn("certs", format_help("trust"))
+        self.assertIn("service", format_help("enable"))
+        self.assertIn("service", format_help("disable"))
         self.assertIn("USERNAME PRIVILEGE", format_help("grant"))
         self.assertIn("USERNAME PRIVILEGE", format_help("revoke"))
 
